@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db/db'
+import { countRounds } from '@/db/roundsRepo'
 import { exportBackup, importBackup } from '@/db/backup'
 import {
   BackupError,
@@ -31,7 +32,7 @@ type Status =
  * device" path until real cloud sync (Phase 2) exists.
  */
 export function SettingsPage() {
-  const roundCount = useLiveQuery(() => db.rounds.count(), [])
+  const roundCount = useLiveQuery(() => countRounds(), [])
   const courseCount = useLiveQuery(() => db.courses.count(), [])
 
   const [status, setStatus] = useState<Status>({ kind: 'idle' })

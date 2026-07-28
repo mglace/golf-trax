@@ -41,13 +41,20 @@ export async function createDraftRound(
     totalScore: totals.totalScore,
     totalPar: totals.totalPar,
     updatedAt: now,
+    // Phase 2 sync bookkeeping. `dirty = 1` on every write (§5.2); the push
+    // additionally filters to completed rounds (§11.11), so a dirty draft is
+    // never actually pushed. `owner = 'local'` until an account adopts it.
+    dirty: 1,
+    owner: 'local',
   }
   await db.rounds.add(round)
   return round
 }
 
+/** Fetch a round by id, treating a soft-deleted (tombstoned) round as absent. */
 export async function getRound(id: string): Promise<Round | undefined> {
-  return db.rounds.get(id)
+  const round = await db.rounds.get(id)
+  return round && !round.deletedAt ? round : undefined
 }
 
 /** Persist a round, refreshing derived totals and the updatedAt timestamp. */
@@ -58,6 +65,7 @@ export async function saveRound(round: Round): Promise<void> {
     totalScore: totals.totalScore,
     totalPar: totals.totalPar,
     updatedAt: new Date().toISOString(),
+    dirty: 1,
   })
 }
 
@@ -69,6 +77,7 @@ export async function updateRoundHoles(id: string, holes: HoleEntry[]): Promise<
     totalScore: totals.totalScore,
     totalPar: totals.totalPar,
     updatedAt: new Date().toISOString(),
+    dirty: 1,
   })
 }
 
@@ -95,24 +104,30 @@ export async function updateHoleInRound(
     totalScore: totals.totalScore,
     totalPar: totals.totalPar,
     updatedAt: new Date().toISOString(),
+    dirty: 1,
   })
 }
 
 /** Update a round's free-text notes. */
 export async function updateRoundNotes(id: string, notes: string): Promise<void> {
-  await db.rounds.update(id, { notes, updatedAt: new Date().toISOString() })
+  await db.rounds.update(id, { notes, updatedAt: new Date().toISOString(), dirty: 1 })
 }
 
-/** All draft rounds, most-recently-updated first. */
+/** All draft rounds, most-recently-updated first. Excludes tombstones. */
 export async function getDraftRounds(): Promise<Round[]> {
   const drafts = await db.rounds.where('status').equals('draft').toArray()
-  return drafts.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  return drafts.filter((r) => !r.deletedAt).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
 }
 
-/** All completed rounds, newest first (by play date). */
+/** All completed rounds, newest first (by play date). Excludes tombstones. */
 export async function getCompletedRounds(): Promise<Round[]> {
   const rounds = await db.rounds.where('status').equals('complete').toArray()
-  return rounds.sort((a, b) => b.date.localeCompare(a.date))
+  return rounds.filter((r) => !r.deletedAt).sort((a, b) => b.date.localeCompare(a.date))
+}
+
+/** Count of live (non-tombstoned) rounds, for the Settings summary. */
+export async function countRounds(): Promise<number> {
+  return db.rounds.filter((r) => !r.deletedAt).count()
 }
 
 /** Finalize a draft: mark complete, refresh totals, stamp the course as played. */
@@ -125,10 +140,27 @@ export async function finalizeRound(id: string): Promise<void> {
     totalScore: totals.totalScore,
     totalPar: totals.totalPar,
     updatedAt: new Date().toISOString(),
+    dirty: 1,
   })
   await markCoursePlayed(round.courseId, new Date(round.date))
 }
 
+/**
+ * Delete a round. A round that has ever been synced (or is account-owned) is
+ * **soft-deleted** — a tombstone (`deletedAt` + `dirty`) that propagates the
+ * delete to other devices and is only hard-removed locally after it has synced
+ * (PHASE2.md §5.2). A never-synced, local-only round has nothing to propagate
+ * to, so it is hard-deleted immediately — preserving the MVP's behavior for the
+ * pure-local user and avoiding tombstones that would linger forever with no
+ * account to sync them away.
+ */
 export async function deleteRound(id: string): Promise<void> {
-  await db.rounds.delete(id)
+  const round = await db.rounds.get(id)
+  if (!round) return
+  const neverSynced = round.version === undefined && (round.owner === undefined || round.owner === 'local')
+  if (neverSynced) {
+    await db.rounds.delete(id)
+    return
+  }
+  await db.rounds.update(id, { deletedAt: new Date().toISOString(), dirty: 1 })
 }

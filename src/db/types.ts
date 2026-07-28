@@ -66,10 +66,54 @@ export interface Round {
   totalPar?: number
   /** ISO timestamp of the last edit (draft auto-save or post-round edit). */
   updatedAt: string
+
+  // --- Phase 2 sync bookkeeping (local-only; never surfaced to the UI as
+  // round data — these drive the sync engine). All are optional on the TS type
+  // so existing fixtures/constructors need not set them, but the Dexie
+  // migration + roundsRepo guarantee they are populated on every persisted row.
+  /**
+   * Has unsynced local edits. Stored as `0 | 1` (not boolean) because Dexie
+   * cannot index booleans; the push query is `where('dirty').equals(1)`.
+   */
+  dirty?: 0 | 1
+  /**
+   * Tombstone marker: ISO timestamp of a soft delete. Every read path excludes
+   * rounds with `deletedAt` set (PHASE2.md §11.10); backups keep them.
+   */
+  deletedAt?: string
+  /**
+   * `'local'` for rounds created before/without sign-in; the `userId` once the
+   * round belongs to an account. Drives the logout rule (§11.5): on logout we
+   * clear rounds whose `owner` is a userId and keep `owner === 'local'`.
+   */
+  owner?: 'local' | string
+  /** Last server-stamped version seen — the LWW input + compare-and-clear key. */
+  version?: number
+  /** Last server-stamped write time (server-authoritative; not the arbiter's
+   * client clock). */
+  serverUpdatedAt?: string
 }
 
-/** Local-only user profile. Single row, id === 'profile'. */
+/** Local user profile. Single row, id === 'profile'. */
 export interface Profile {
   id: 'profile'
   name?: string
+  /**
+   * ISO timestamp of the last profile edit. Added in Phase 2 so the profile
+   * reconciles by the same server-authoritative LWW as rounds (§11.6). Older
+   * local profiles may lack it; treated as "never edited".
+   */
+  updatedAt?: string
+}
+
+/**
+ * Singleton sync-cursor/state row (id === 'sync'). Tracks how far the client
+ * has pulled and which account it is syncing. Absent until the first sync.
+ */
+export interface SyncState {
+  id: 'sync'
+  /** Cosmos `_ts` high-water mark applied locally; the `pull?since=` cursor. */
+  lastPulledTs: number
+  /** The account currently syncing, or null when signed out / local-only. */
+  userId: string | null
 }

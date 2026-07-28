@@ -151,6 +151,18 @@ function validateRound(v: unknown): Round | null {
   // non-numeric totals so corrupt values can't reach history display.
   if (!Number.isFinite(round.totalScore)) delete round.totalScore
   if (!Number.isFinite(round.totalPar)) delete round.totalPar
+
+  // Phase 2 sync bookkeeping (§11.10): backups DO include tombstones for
+  // fidelity, so import must tolerate them — but sanitize each field so a
+  // hand-edited or older backup can't inject a bad type via the spread above.
+  round.dirty = v.dirty === 1 ? 1 : 0
+  round.owner = typeof v.owner === 'string' ? v.owner : 'local'
+  if (typeof v.deletedAt === 'string') round.deletedAt = v.deletedAt
+  else delete round.deletedAt
+  if (Number.isFinite(v.version)) round.version = v.version as number
+  else delete round.version
+  if (typeof v.serverUpdatedAt === 'string') round.serverUpdatedAt = v.serverUpdatedAt
+  else delete round.serverUpdatedAt
   return round
 }
 
@@ -168,7 +180,11 @@ function validateCourse(v: unknown): CachedCourse | null {
 function validateProfile(v: unknown): Profile | null {
   if (!isObject(v)) return null
   if (v.id !== 'profile') return null
-  return { id: 'profile', name: typeof v.name === 'string' ? v.name : undefined }
+  return {
+    id: 'profile',
+    name: typeof v.name === 'string' ? v.name : undefined,
+    updatedAt: typeof v.updatedAt === 'string' ? v.updatedAt : undefined,
+  }
 }
 
 /**
