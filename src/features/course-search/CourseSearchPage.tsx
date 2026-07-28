@@ -4,7 +4,8 @@ import { SearchBar } from './SearchBar'
 import { CourseCard } from './CourseCard'
 import { RecentlyPlayed } from './RecentlyPlayed'
 import { ApiErrorMessage } from '@/components/ApiErrorMessage'
-import { ChevronLeftIcon, SearchIcon } from '@/components/icons'
+import { ChevronLeftIcon, SearchIcon, WifiOffIcon } from '@/components/icons'
+import { useOnlineStatus } from '@/hooks/useOnlineStatus'
 import { cacheCourse } from '@/db/coursesRepo'
 import type { ApiCourse } from '@/api/types'
 
@@ -15,6 +16,7 @@ import type { ApiCourse } from '@/api/types'
  */
 export function CourseSearchPage() {
   const navigate = useNavigate()
+  const online = useOnlineStatus()
   const { query, setQuery, status, results, error, retry } = useCourseSearch()
 
   async function handleSelect(course: ApiCourse) {
@@ -41,6 +43,19 @@ export function CourseSearchPage() {
       </header>
 
       <SearchBar value={query} onChange={setQuery} loading={status === 'loading'} />
+
+      {!online && (
+        <div
+          role="status"
+          className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+        >
+          <WifiOffIcon className="mt-0.5 h-5 w-5 shrink-0" aria-hidden />
+          <p>
+            You’re offline. Searching for new courses needs a connection, but you can still start a
+            round at a recently-played course below.
+          </p>
+        </div>
+      )}
 
       <div className="mt-4 space-y-3">
         {status === 'error' && error && <ApiErrorMessage error={error} onRetry={retry} />}

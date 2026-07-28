@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { PlusIcon, FlagIcon } from '@/components/icons'
+import { PlusIcon, FlagIcon, SettingsIcon } from '@/components/icons'
 import { ResumeDraftCard } from './ResumeDraftCard'
 
 /**
@@ -12,6 +12,13 @@ export function HomePage() {
       <header className="mb-6 flex items-center gap-2">
         <FlagIcon className="h-7 w-7 text-fairway-700" aria-hidden />
         <h1 className="text-2xl font-bold tracking-tight">GolfTrax</h1>
+        <Link
+          to="/settings"
+          aria-label="Settings"
+          className="ml-auto -mr-1 flex h-11 w-11 items-center justify-center rounded-full text-slate-500 active:bg-slate-100"
+        >
+          <SettingsIcon className="h-6 w-6" aria-hidden />
+        </Link>
       </header>
 
       <Link

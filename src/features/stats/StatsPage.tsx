@@ -109,13 +109,16 @@ export function StatsPage() {
       </div>
 
       {/* Window selector */}
-      <div className="mt-5 grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1" role="tablist">
+      <div
+        className="mt-5 grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1"
+        role="group"
+        aria-label="Averaging window"
+      >
         {WINDOWS.map((w) => (
           <button
             key={String(w.key)}
             type="button"
-            role="tab"
-            aria-selected={window === w.key}
+            aria-pressed={window === w.key}
             onClick={() => setWindow(w.key)}
             className={[
               'rounded-lg py-2 text-sm font-semibold transition-colors',

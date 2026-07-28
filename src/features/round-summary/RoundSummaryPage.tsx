@@ -68,7 +68,7 @@ export function RoundSummaryPage() {
   }
 
   return (
-    <div className="mx-auto min-h-screen max-w-md px-4 pb-10">
+    <main className="mx-auto min-h-screen max-w-md px-4 pb-10">
       <header className="pt-safe flex items-center justify-between gap-1 pt-3">
         <div className="flex items-center gap-1">
           <button
@@ -177,6 +177,6 @@ export function RoundSummaryPage() {
           onClose={() => setEditIndex(null)}
         />
       )}
-    </div>
+    </main>
   )
 }

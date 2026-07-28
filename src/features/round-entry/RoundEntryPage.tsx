@@ -54,7 +54,7 @@ export function RoundEntryPage() {
     totals.holesEntered > 0 ? `${vsParLabel} · thru ${totals.holesEntered}` : 'No scores yet'
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-md flex-col px-4">
+    <main className="mx-auto flex min-h-screen max-w-md flex-col px-4">
       {/* Header */}
       <header className="pt-safe sticky top-0 z-10 -mx-4 bg-slate-50/95 px-4 pb-2 pt-3 backdrop-blur">
         <div className="flex items-center justify-between gap-2">
@@ -67,7 +67,7 @@ export function RoundEntryPage() {
             <ChevronLeftIcon className="h-6 w-6" aria-hidden />
           </button>
           <div className="min-w-0 flex-1 text-center">
-            <p className="truncate text-sm font-semibold text-slate-900">{round.courseName}</p>
+            <h1 className="truncate text-sm font-semibold text-slate-900">{round.courseName}</h1>
             <p className="truncate text-xs text-slate-500">
               {round.teeName} · {ROUND_LENGTH_LABEL[round.roundLength]}
             </p>
@@ -81,7 +81,7 @@ export function RoundEntryPage() {
           </button>
         </div>
         <div className="mt-2 flex items-center justify-between text-xs font-medium text-slate-500">
-          <span>
+          <span aria-live="polite" aria-atomic="true">
             Hole {hole.holeNumber} · {currentIndex + 1} of {holes.length}
           </span>
           <span className="tabular-nums">{scoredLabel}</span>
@@ -116,7 +116,10 @@ export function RoundEntryPage() {
 
       {/* Navigation */}
       <div className="mt-auto" />
-      <nav className="pb-safe sticky bottom-0 -mx-4 mt-6 flex gap-3 bg-slate-50/95 px-4 pb-3 pt-2 backdrop-blur">
+      <nav
+        aria-label="Hole navigation"
+        className="pb-safe sticky bottom-0 -mx-4 mt-6 flex gap-3 bg-slate-50/95 px-4 pb-3 pt-2 backdrop-blur"
+      >
         <button
           type="button"
           onClick={() => setCurrentIndex(currentIndex - 1)}
@@ -145,7 +148,7 @@ export function RoundEntryPage() {
           </button>
         )}
       </nav>
-    </div>
+    </main>
   )
 }
 

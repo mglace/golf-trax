@@ -104,16 +104,21 @@ function FairwayButton({
 
 function GirBadge({ gir }: { gir: boolean | undefined }) {
   if (gir === undefined) {
-    return <span className="text-xs font-medium text-slate-500">GIR —</span>
+    return (
+      <span className="text-xs font-medium text-slate-500" aria-label="Green in regulation: not tracked">
+        GIR —
+      </span>
+    )
   }
   return (
     <span
+      aria-label={gir ? 'Green in regulation: yes' : 'Green in regulation: no'}
       className={[
         'rounded-full px-2 py-0.5 text-xs font-semibold',
         gir ? 'bg-fairway-100 text-fairway-800' : 'bg-slate-100 text-slate-500',
       ].join(' ')}
     >
-      {gir ? 'GIR ✓' : 'GIR ✗'}
+      <span aria-hidden="true">{gir ? 'GIR ✓' : 'GIR ✗'}</span>
     </span>
   )
 }
