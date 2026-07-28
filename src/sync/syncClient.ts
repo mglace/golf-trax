@@ -20,7 +20,7 @@ import {
   type SyncRound,
 } from '@/domain/sync'
 import { getSyncState } from './syncState'
-import { useSyncStore } from './syncStore'
+import { useSyncStore, type SyncStatus } from './syncStore'
 
 export type GetToken = () => Promise<string | null>
 
@@ -127,32 +127,49 @@ async function pullChanges(token: string, userId: string): Promise<void> {
   }
 }
 
-// Single-flight: coalesce concurrent triggers into one in-flight round-trip.
-let inFlight: Promise<void> | null = null
+/**
+ * Logout data rule (PHASE2.md §11.5). Clear every account-owned round (owner is
+ * a userId) and reset the cursor; keep `owner === 'local'` rounds. This is what
+ * makes sign-out safe on a shared device — one account's synced rounds never
+ * linger into another's session — and is safe because those rounds live on the
+ * server and re-pull on next sign-in.
+ */
+export async function clearAccountRounds(): Promise<void> {
+  await db.transaction('rw', db.rounds, db.syncState, async () => {
+    await db.rounds.filter((r) => typeof r.owner === 'string' && r.owner !== 'local').delete()
+    await db.syncState.put({ id: 'sync', userId: null, lastPulledTs: 0 })
+  })
+}
 
-async function runSync(getToken: GetToken, userId: string): Promise<void> {
+// Single-flight: coalesce concurrent triggers into one in-flight round-trip.
+let inFlight: Promise<SyncStatus> | null = null
+
+async function runSync(getToken: GetToken, userId: string): Promise<SyncStatus> {
   const store = useSyncStore.getState()
   const token = await getToken()
   if (!token) {
     // No valid token (offline/expired) — sync paused, app keeps working (§4).
     store.setStatus('paused')
-    return
+    return 'paused'
   }
   store.setStatus('syncing')
   try {
     await pushChanges(token, userId)
     await pullChanges(token, userId)
     store.markSynced(Date.now())
+    return 'synced'
   } catch {
     store.setStatus('error')
+    return 'error'
   }
 }
 
 /**
  * Run a push-then-pull round-trip for `userId`. Best-effort and idempotent;
- * concurrent calls coalesce into the single in-flight run.
+ * concurrent calls coalesce into the single in-flight run. Resolves to the
+ * final status so callers can drive retry/backoff.
  */
-export function sync(getToken: GetToken, userId: string): Promise<void> {
+export function sync(getToken: GetToken, userId: string): Promise<SyncStatus> {
   if (inFlight) return inFlight
   inFlight = runSync(getToken, userId).finally(() => {
     inFlight = null
