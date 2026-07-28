@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useDialogFocus } from './useDialogFocus'
 
 interface ConfirmDialogProps {
   title: string
@@ -21,6 +22,8 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const dialogRef = useDialogFocus<HTMLDivElement>()
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onCancel()
@@ -38,6 +41,7 @@ export function ConfirmDialog({
       aria-label={title}
     >
       <div
+        ref={dialogRef}
         className="w-full max-w-xs rounded-2xl bg-white p-5 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >

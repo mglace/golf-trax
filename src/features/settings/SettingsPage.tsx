@@ -173,7 +173,7 @@ export function SettingsPage() {
           )}
         </div>
 
-        <p className="mt-4 text-xs text-slate-400">
+        <p className="mt-4 text-xs text-slate-500">
           Importing merges the backup into this device — matching rounds are updated and new ones are
           added. Nothing already on this device is deleted.
         </p>
