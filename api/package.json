@@ -1,0 +1,12 @@
+{
+  "name": "golftrax-api",
+  "version": "1.0.0",
+  "description": "Managed Function proxy for GolfCourseAPI — keeps the API key server-side.",
+  "main": "src/functions/*.js",
+  "scripts": {
+    "start": "func start"
+  },
+  "dependencies": {
+    "@azure/functions": "^4.5.0"
+  }
+}

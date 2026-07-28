@@ -1,0 +1,15 @@
+{
+  "$schema": "https://aka.ms/azure/static-web-apps-cli/schema",
+  "configurations": {
+    "golftrax": {
+      "appLocation": ".",
+      "apiLocation": "api",
+      "outputLocation": "dist",
+      "appDevserverUrl": "http://localhost:5173",
+      "run": "npm run dev",
+      "appBuildCommand": "npm run build",
+      "apiLanguage": "node",
+      "apiVersion": "20"
+    }
+  }
+}

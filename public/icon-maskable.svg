@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Full-bleed background so the safe-zone crop on Android looks correct -->
+  <rect width="512" height="512" fill="#166534"/>
+  <!-- Content kept within the ~80% maskable safe zone -->
+  <rect x="250" y="170" width="14" height="200" rx="7" fill="#f8fafc"/>
+  <path d="M257 176 L360 212 L257 248 Z" fill="#22c55e"/>
+  <circle cx="220" cy="358" r="32" fill="#f8fafc"/>
+</svg>

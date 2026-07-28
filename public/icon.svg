@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="112" fill="#166534"/>
+  <!-- flag pole -->
+  <rect x="238" y="120" width="16" height="286" rx="8" fill="#f8fafc"/>
+  <!-- flag -->
+  <path d="M246 128 L392 180 L246 232 Z" fill="#22c55e"/>
+  <!-- golf ball -->
+  <circle cx="200" cy="392" r="42" fill="#f8fafc"/>
+</svg>
