@@ -47,10 +47,19 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
         runtimeCaching: [
           {
-            urlPattern: ({ url }) => url.hostname === 'api.golfcourseapi.com',
+            // Match BOTH transports: direct mode hits api.golfcourseapi.com,
+            // while production (proxy mode) hits the app's own same-origin
+            // /api/* Functions. Without the /api/* clause, prod never cached
+            // course responses and "previously-viewed courses work offline"
+            // silently didn't hold.
+            urlPattern: ({ url }) =>
+              url.hostname === 'api.golfcourseapi.com' || url.pathname.startsWith('/api/'),
             handler: 'NetworkFirst',
             options: {
               cacheName: 'golfcourseapi',
+              // On a spotty on-course connection, fall back to a cached
+              // response after 5s instead of hanging on a dying request.
+              networkTimeoutSeconds: 5,
               expiration: {
                 maxEntries: 100,
                 maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
