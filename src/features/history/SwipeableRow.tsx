@@ -126,7 +126,7 @@ export function SwipeableRow({ children, tapLabel, onTap, onDelete }: SwipeableR
           onClick={onDelete}
           onPointerDown={(e) => e.stopPropagation()}
           aria-label={`Delete ${tapLabel}`}
-          className="flex shrink-0 items-center rounded-r-xl border-y border-r border-slate-200 bg-white px-3 text-slate-300 transition-colors hover:bg-red-50 hover:text-red-600"
+          className="flex shrink-0 items-center rounded-r-xl border-y border-r border-slate-200 bg-white px-3 text-slate-500 transition-colors hover:bg-red-50 hover:text-red-600"
         >
           <TrashIcon className="h-5 w-5" aria-hidden />
         </button>

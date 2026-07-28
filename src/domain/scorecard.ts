@@ -94,5 +94,5 @@ export const SCORE_TONE_CLASS: Record<ScoreTone, string> = {
   par: 'text-slate-800',
   bogey: 'bg-amber-100 text-amber-800 rounded-md',
   double: 'bg-red-100 text-red-700 rounded-md',
-  empty: 'text-slate-300',
+  empty: 'text-slate-500',
 }

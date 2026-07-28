@@ -33,12 +33,12 @@ export function HoleEditSheet({ hole, index, onChange, onClose }: HoleEditSheetP
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
       onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Edit hole ${hole.holeNumber}`}
     >
       <div
         ref={sheetRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Edit hole ${hole.holeNumber}`}
         className="pb-safe w-full max-w-md rounded-t-2xl bg-slate-50 p-4 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
