@@ -3,6 +3,13 @@
   "Values": {
     "FUNCTIONS_WORKER_RUNTIME": "node",
     "AzureWebJobsStorage": "",
-    "GOLF_API_KEY": "your_golfcourseapi_key_here"
+    "GOLF_API_KEY": "your_golfcourseapi_key_here",
+
+    "AUTH0_DOMAIN": "your-tenant.us.auth0.com",
+    "AUTH0_AUDIENCE": "https://api.golftrax.app",
+
+    "COSMOS_ENDPOINT": "https://your-account.documents.azure.com:443/",
+    "COSMOS_KEY": "your_cosmos_primary_key",
+    "COSMOS_DATABASE": "golftrax"
   }
 }
