@@ -8,22 +8,13 @@ import { CourseSetupPage } from '@/features/course-search/CourseSetupPage'
 import { RoundEntryPage } from '@/features/round-entry/RoundEntryPage'
 import { RoundSummaryPage } from '@/features/round-summary/RoundSummaryPage'
 import { SettingsPage } from '@/features/settings/SettingsPage'
-import { SpinnerIcon } from '@/components/icons'
+import { LazyFallback } from '@/components/LazyFallback'
 
 // Stats pulls in the charting library (Recharts). Code-split it so the core
 // on-course flow stays lightweight and fast to load / cache offline.
 const StatsPage = lazy(() =>
   import('@/features/stats/StatsPage').then((m) => ({ default: m.StatsPage })),
 )
-
-function LazyFallback() {
-  return (
-    <div className="flex items-center justify-center gap-2 py-24 text-slate-500">
-      <SpinnerIcon className="h-6 w-6" aria-hidden />
-      <span className="text-sm">Loading…</span>
-    </div>
-  )
-}
 
 /**
  * Route map. The bottom-nav tabs (Home / Rounds / Stats) and the course-search
