@@ -19,7 +19,7 @@ const tabs: Tab[] = [
 export function BottomNav() {
   return (
     <nav
-      className="pb-safe fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 backdrop-blur"
+      className="pb-safe z-20 shrink-0 border-t border-slate-200 bg-white/95 backdrop-blur"
       aria-label="Primary"
     >
       <ul className="mx-auto flex max-w-md items-stretch justify-around">

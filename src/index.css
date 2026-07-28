@@ -39,4 +39,14 @@
   .pb-safe {
     padding-bottom: var(--safe-bottom);
   }
+
+  /* Full-height app shell that tracks the *dynamic* viewport. In an installed
+     iOS PWA a `position: fixed; bottom: 0` element does not reliably reach the
+     true bottom edge, so the shell is sized to 100dvh and lays the bottom nav
+     out as a normal flex child instead — guaranteeing it sits on the real
+     bottom edge. The 100vh line is a fallback for browsers without dvh. */
+  .app-shell {
+    height: 100vh;
+    height: 100dvh;
+  }
 }
