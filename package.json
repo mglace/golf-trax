@@ -15,6 +15,7 @@
     "swa:start": "swa start"
   },
   "dependencies": {
+    "@auth0/auth0-react": "^2.22.0",
     "dexie": "^4.0.10",
     "dexie-react-hooks": "^1.1.7",
     "react": "^18.3.1",

@@ -11,6 +11,7 @@ import {
 } from '@/domain/backup'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { DownloadIcon, SpinnerIcon, UploadIcon } from '@/components/icons'
+import { AccountSection } from './AccountSection'
 
 /** A staged import awaiting user confirmation (parsed but not yet written). */
 interface PendingImport {
@@ -179,6 +180,8 @@ export function SettingsPage() {
           added. Nothing already on this device is deleted.
         </p>
       </section>
+
+      <AccountSection />
 
       {pending && (
         <ConfirmDialog

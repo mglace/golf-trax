@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'node:path'
@@ -9,6 +9,11 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+  },
+  // Vitest scopes to the SPA source; the api/ workspace has its own
+  // Node-native tests (`node --test`), which vitest must not try to run.
+  test: {
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
   },
   plugins: [
     react(),
