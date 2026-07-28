@@ -7,6 +7,7 @@ import { CourseSearchPage } from '@/features/course-search/CourseSearchPage'
 import { CourseSetupPage } from '@/features/course-search/CourseSetupPage'
 import { RoundEntryPage } from '@/features/round-entry/RoundEntryPage'
 import { RoundSummaryPage } from '@/features/round-summary/RoundSummaryPage'
+import { SettingsPage } from '@/features/settings/SettingsPage'
 import { SpinnerIcon } from '@/components/icons'
 
 // Stats pulls in the charting library (Recharts). Code-split it so the core
@@ -38,6 +39,7 @@ export const router = createBrowserRouter([
       { path: 'new', element: <CourseSearchPage /> },
       { path: 'new/:courseId', element: <CourseSetupPage /> },
       { path: 'rounds', element: <RoundsPage /> },
+      { path: 'settings', element: <SettingsPage /> },
       {
         path: 'stats',
         element: (
