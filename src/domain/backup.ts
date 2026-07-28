@@ -11,7 +11,7 @@
  * JSON can be unit-tested in isolation. The Dexie read/write wrappers live in
  * `@/db/backup`.
  */
-import type { CachedCourse, Profile, Round, RoundLength, RoundStatus } from '@/db/types'
+import type { CachedCourse, HoleEntry, Profile, Round, RoundLength, RoundStatus } from '@/db/types'
 
 /** Identifies a JSON blob as a GolfTrax backup (guards against importing junk). */
 export const BACKUP_APP = 'golftrax' as const
@@ -78,6 +78,34 @@ function isObject(v: unknown): v is Record<string, unknown> {
  * the goal is to reject data that would corrupt the store or crash the UI, not
  * to re-derive every field.
  */
+/**
+ * Sanitize a single hole from imported JSON. The four snapshotted fields
+ * (holeNumber, par, handicap, yardage) are required and must be finite numbers;
+ * a hole missing any of them is corrupt and rejected (→ its whole round is
+ * skipped). Optional fields are coerced: non-finite score/putts and non-boolean
+ * fairwayHit/gir are dropped rather than passed through, so a string like
+ * `score: "5"` can never reach the scorecard/stats math as NaN.
+ */
+function sanitizeHole(h: unknown): HoleEntry | null {
+  if (!isObject(h)) return null
+  const { holeNumber, par, handicap, yardage, score, fairwayHit, putts, gir } = h
+  if (!Number.isFinite(holeNumber)) return null
+  if (!Number.isFinite(par)) return null
+  if (!Number.isFinite(handicap)) return null
+  if (!Number.isFinite(yardage)) return null
+  const clean: HoleEntry = {
+    holeNumber: holeNumber as number,
+    par: par as number,
+    handicap: handicap as number,
+    yardage: yardage as number,
+  }
+  if (Number.isFinite(score)) clean.score = score as number
+  if (typeof fairwayHit === 'boolean') clean.fairwayHit = fairwayHit
+  if (Number.isFinite(putts)) clean.putts = putts as number
+  if (typeof gir === 'boolean') clean.gir = gir
+  return clean
+}
+
 function validateRound(v: unknown): Round | null {
   if (!isObject(v)) return null
   const {
@@ -103,12 +131,27 @@ function validateRound(v: unknown): Round | null {
   if (!ROUND_STATUSES.includes(status as RoundStatus)) return null
   if (typeof date !== 'string') return null
   if (!Array.isArray(holes)) return null
-  if (!holes.every((h) => isObject(h) && typeof h.holeNumber === 'number')) return null
+
+  // Sanitize every hole; a single corrupt hole invalidates the round so we
+  // never persist a partially-broken scorecard.
+  const cleanHoles: HoleEntry[] = []
+  for (const h of holes) {
+    const clean = sanitizeHole(h)
+    if (!clean) return null
+    cleanHoles.push(clean)
+  }
+
   // updatedAt was added alongside drafts; tolerate older exports missing it.
-  return {
+  const round: Round = {
     ...(v as unknown as Round),
+    holes: cleanHoles,
     updatedAt: typeof updatedAt === 'string' ? updatedAt : date,
   }
+  // Derived totals are recomputed on save, but imports bulkPut as-is — drop
+  // non-numeric totals so corrupt values can't reach history display.
+  if (!Number.isFinite(round.totalScore)) delete round.totalScore
+  if (!Number.isFinite(round.totalPar)) delete round.totalPar
+  return round
 }
 
 /** Validate a single cached course from imported JSON. */

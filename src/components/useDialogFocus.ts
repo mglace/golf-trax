@@ -10,6 +10,16 @@ const FOCUSABLE = [
 ].join(',')
 
 /**
+ * Whether an element is a sound target to restore focus to on dialog close:
+ * still connected, keyboard-focusable (tabIndex >= 0), and rendered/visible
+ * (offsetParent is null for display:none and detached nodes). Excludes hidden
+ * sr-only openers like the Settings file input (tabIndex={-1}).
+ */
+function isRestorable(el: HTMLElement | null): el is HTMLElement {
+  return !!el && el.isConnected && el.tabIndex >= 0 && el.offsetParent !== null
+}
+
+/**
  * Focus management for modal dialogs / bottom-sheets (WCAG 2.4.3 focus order,
  * 2.1.2 no keyboard trap in the "focus can't escape into the page behind"
  * sense). On open it moves focus into the dialog; while open it keeps Tab /
@@ -60,8 +70,14 @@ export function useDialogFocus<T extends HTMLElement>() {
     container.addEventListener('keydown', onKeyDown)
     return () => {
       container.removeEventListener('keydown', onKeyDown)
-      // Restore focus to the opener if it's still in the document.
-      if (previouslyFocused && document.contains(previouslyFocused)) {
+      // Restore focus to the opener only if it's a genuinely focusable, visible
+      // element. `document.contains()` alone isn't enough: the Settings import
+      // flow opens the dialog via a hidden sr-only, tabIndex={-1} file input,
+      // which is still "in the document" but off-screen and un-tabbable —
+      // restoring to it would strand keyboard/SR focus. When the opener isn't a
+      // sound target we leave focus alone; the browser then moves it to <body>,
+      // so the next Tab restarts from the top rather than from a lost element.
+      if (isRestorable(previouslyFocused)) {
         previouslyFocused.focus()
       }
     }

@@ -123,6 +123,65 @@ describe('parseBackup validation', () => {
     expect(backup.data.rounds[0].updatedAt).toBe(legacy.date)
   })
 
+  it('skips a round whose hole has a non-numeric required field', () => {
+    const bad = round({
+      id: 'bad-par',
+      holes: [{ holeNumber: 1, par: '4', handicap: 5, yardage: 400 } as unknown as never],
+    })
+    const text = JSON.stringify({
+      app: BACKUP_APP,
+      schemaVersion: 1,
+      exportedAt: '',
+      data: { rounds: [round(), bad], courses: [], profile: null },
+    })
+    const { backup, skipped } = parseBackup(text)
+    expect(backup.data.rounds).toHaveLength(1)
+    expect(backup.data.rounds[0].id).toBe('r1')
+    expect(skipped.rounds).toBe(1)
+  })
+
+  it('drops non-numeric optional hole fields instead of passing them through', () => {
+    const dirty = round({
+      id: 'dirty-score',
+      holes: [
+        {
+          holeNumber: 1,
+          par: 4,
+          handicap: 5,
+          yardage: 400,
+          score: '5',
+          putts: 'two',
+          fairwayHit: 'yes',
+        } as unknown as never,
+      ],
+    })
+    const text = JSON.stringify({
+      app: BACKUP_APP,
+      schemaVersion: 1,
+      exportedAt: '',
+      data: { rounds: [dirty], courses: [], profile: null },
+    })
+    const { backup } = parseBackup(text)
+    const hole = backup.data.rounds[0].holes[0]
+    expect(hole.par).toBe(4)
+    expect(hole.score).toBeUndefined()
+    expect(hole.putts).toBeUndefined()
+    expect(hole.fairwayHit).toBeUndefined()
+  })
+
+  it('drops non-numeric derived totals', () => {
+    const dirty = round({ id: 'dirty-totals' })
+    ;(dirty as { totalScore: unknown }).totalScore = '80'
+    const text = JSON.stringify({
+      app: BACKUP_APP,
+      schemaVersion: 1,
+      exportedAt: '',
+      data: { rounds: [dirty], courses: [], profile: null },
+    })
+    const { backup } = parseBackup(text)
+    expect(backup.data.rounds[0].totalScore).toBeUndefined()
+  })
+
   it('tolerates a missing profile', () => {
     const text = JSON.stringify({
       app: BACKUP_APP,
