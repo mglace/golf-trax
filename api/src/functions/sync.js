@@ -135,6 +135,7 @@ const pushHandler = requireAuth(async (request, context, { userId }) => {
 
 const pullHandler = requireAuth(async (request, context, { userId }) => {
   const since = Math.max(0, parseInt(request.query.get('since') || '0', 10) || 0)
+  const offset = Math.max(0, parseInt(request.query.get('offset') || '0', 10) || 0)
   const limitParam = parseInt(request.query.get('limit') || '', 10)
   const limit = Number.isFinite(limitParam)
     ? Math.min(SYNC_PAGE_LIMIT, Math.max(1, limitParam))
@@ -149,11 +150,15 @@ const pullHandler = requireAuth(async (request, context, { userId }) => {
   try {
     // `_ts >= since` (not `>`) because Cosmos `_ts` is second-resolution; apply
     // is idempotent LWW so re-seeing a boundary record is harmless (§11.9).
+    // Paging within a run is by OFFSET (not by advancing `since`) so a full page
+    // of records sharing one second can't stall the cursor into an infinite
+    // loop; OFFSET also needs only the default `_ts` range index, no composite.
     const query = {
       query:
-        'SELECT * FROM c WHERE c._ts >= @since ORDER BY c._ts ASC OFFSET 0 LIMIT @limit',
+        'SELECT * FROM c WHERE c._ts >= @since ORDER BY c._ts ASC OFFSET @offset LIMIT @limit',
       parameters: [
         { name: '@since', value: since },
+        { name: '@offset', value: offset },
         { name: '@limit', value: limit },
       ],
     }

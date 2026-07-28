@@ -93,10 +93,18 @@ async function pushChanges(token: string, userId: string): Promise<void> {
 
 /** Pull remote changes since the cursor and apply LWW, paging until drained. */
 async function pullChanges(token: string, userId: string): Promise<void> {
+  const start = await getSyncState()
+  // `since` is fixed for the whole run; pages advance by OFFSET, not by moving
+  // the cursor, so a full page sharing one `_ts` can't stall (§11.9). The cursor
+  // is still persisted per page for crash-safety — on restart the run re-reads
+  // it as `since` and re-pages from offset 0 (idempotent apply, §11.4).
+  const since = start.userId === userId ? start.lastPulledTs : 0
+  let offset = 0
   for (;;) {
-    const state = await getSyncState()
-    const since = state.userId === userId ? state.lastPulledTs : 0
-    const res = await apiFetch(`sync/pull?since=${since}&limit=${SYNC_PAGE_LIMIT}`, token)
+    const res = await apiFetch(
+      `sync/pull?since=${since}&offset=${offset}&limit=${SYNC_PAGE_LIMIT}`,
+      token,
+    )
     if (!res.ok) throw new Error(`pull failed: ${res.status}`)
     const data = (await res.json()) as PullResponse
 
@@ -107,23 +115,27 @@ async function pullChanges(token: string, userId: string): Promise<void> {
         await db.rounds.filter((r) => r.owner === userId).delete()
         await db.syncState.put({ id: 'sync', userId, lastPulledTs: 0 })
       })
-      continue
+      return pullChanges(token, userId) // restart the run from the reset cursor
     }
 
     const remote = data.rounds ?? []
     const maxTs = data.maxTs ?? since
     // Apply changes AND advance the cursor in one transaction so a crash can
-    // never leave the cursor ahead of the applied data (§11.4).
+    // never leave the cursor ahead of the applied data (§11.4). The cursor only
+    // moves forward (monotonic) even if a concurrent write already advanced it.
     await db.transaction('rw', db.rounds, db.syncState, async () => {
       for (const r of remote) {
         const local = (await db.rounds.get(r.id)) ?? null
         const { round, changed } = applyPull(local, r, userId)
         if (changed) await db.rounds.put(round as Round)
       }
-      await db.syncState.put({ id: 'sync', userId, lastPulledTs: maxTs })
+      const current = await db.syncState.get('sync')
+      const next = Math.max(current?.lastPulledTs ?? 0, maxTs)
+      await db.syncState.put({ id: 'sync', userId, lastPulledTs: next })
     })
 
     if (!data.hasMore) return
+    offset += SYNC_PAGE_LIMIT
   }
 }
 
