@@ -15,6 +15,7 @@
     "swa:start": "swa start"
   },
   "dependencies": {
+    "@auth0/auth0-react": "^2.22.0",
     "dexie": "^4.0.10",
     "dexie-react-hooks": "^1.1.7",
     "react": "^18.3.1",
@@ -37,6 +38,7 @@
     "eslint": "^8.57.1",
     "eslint-plugin-react-hooks": "^4.6.2",
     "eslint-plugin-react-refresh": "^0.4.14",
+    "fake-indexeddb": "^6.2.5",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",
     "typescript": "^5.6.3",

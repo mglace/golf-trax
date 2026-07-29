@@ -32,6 +32,9 @@ function persist(round: Round): Round {
     totalScore: totals.totalScore,
     totalPar: totals.totalPar,
     updatedAt: new Date().toISOString(),
+    // Mark dirty on every write (§5.2); drafts are filtered out of the push by
+    // status (§11.11), so a dirty draft is never actually synced.
+    dirty: 1,
   }
   void db.rounds.put(next)
   return next

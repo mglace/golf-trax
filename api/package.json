@@ -4,9 +4,12 @@
   "description": "Managed Function proxy for GolfCourseAPI — keeps the API key server-side.",
   "main": "src/functions/*.js",
   "scripts": {
-    "start": "func start"
+    "start": "func start",
+    "test": "node --test"
   },
   "dependencies": {
-    "@azure/functions": "^4.5.0"
+    "@azure/cosmos": "^4.2.0",
+    "@azure/functions": "^4.5.0",
+    "jose": "^5.9.6"
   }
 }

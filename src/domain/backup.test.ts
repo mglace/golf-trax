@@ -182,6 +182,58 @@ describe('parseBackup validation', () => {
     expect(backup.data.rounds[0].totalScore).toBeUndefined()
   })
 
+  it('preserves a tombstone and sanitizes sync bookkeeping fields', () => {
+    const tombstone = round({
+      id: 'deleted-1',
+      deletedAt: '2026-07-10T00:00:00.000Z',
+      owner: 'auth0|abc',
+      version: 7,
+      serverUpdatedAt: '2026-07-10T00:00:01.000Z',
+      dirty: 1,
+    })
+    // A junk-typed record: dirty/owner/version should be coerced, not trusted.
+    const junk = round({ id: 'junk-1' }) as unknown as Record<string, unknown>
+    junk.dirty = 'yes'
+    junk.owner = { not: 'a string' }
+    junk.version = 'nope'
+    junk.deletedAt = 42
+    const text = JSON.stringify({
+      app: BACKUP_APP,
+      schemaVersion: 1,
+      exportedAt: '',
+      data: { rounds: [tombstone, junk], courses: [], profile: null },
+    })
+    const { backup, skipped } = parseBackup(text)
+    expect(skipped.rounds).toBe(0)
+    const [t, j] = backup.data.rounds
+    // Tombstone survives with its fields intact (backups keep tombstones).
+    expect(t.deletedAt).toBe('2026-07-10T00:00:00.000Z')
+    expect(t.owner).toBe('auth0|abc')
+    expect(t.version).toBe(7)
+    expect(t.serverUpdatedAt).toBe('2026-07-10T00:00:01.000Z')
+    expect(t.dirty).toBe(1)
+    // Junk is coerced to safe defaults, never passed through.
+    expect(j.dirty).toBe(0)
+    expect(j.owner).toBe('local')
+    expect(j.version).toBeUndefined()
+    expect(j.deletedAt).toBeUndefined()
+  })
+
+  it('preserves a profile updatedAt for LWW', () => {
+    const text = JSON.stringify({
+      app: BACKUP_APP,
+      schemaVersion: 1,
+      exportedAt: '',
+      data: {
+        rounds: [],
+        courses: [],
+        profile: { id: 'profile', name: 'Matt', updatedAt: '2026-07-05T00:00:00.000Z' },
+      },
+    })
+    const { backup } = parseBackup(text)
+    expect(backup.data.profile?.updatedAt).toBe('2026-07-05T00:00:00.000Z')
+  })
+
   it('tolerates a missing profile', () => {
     const text = JSON.stringify({
       app: BACKUP_APP,

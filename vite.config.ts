@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'node:path'
@@ -9,6 +9,11 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+  },
+  // Vitest scopes to the SPA source; the api/ workspace has its own
+  // Node-native tests (`node --test`), which vitest must not try to run.
+  test: {
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
   },
   plugins: [
     react(),
@@ -47,13 +52,21 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
         runtimeCaching: [
           {
-            // Match BOTH transports: direct mode hits api.golfcourseapi.com,
-            // while production (proxy mode) hits the app's own same-origin
-            // /api/* Functions. Without the /api/* clause, prod never cached
-            // course responses and "previously-viewed courses work offline"
-            // silently didn't hold.
+            // Cache ONLY the public course-lookup routes. Match both transports:
+            // direct mode hits api.golfcourseapi.com; production (proxy mode)
+            // hits the app's own /api/courses and /api/search Functions.
+            //
+            // Scoped deliberately to course routes — NOT a blanket `/api/*` —
+            // because the authenticated Phase 2 endpoints (`/api/sync/*`,
+            // `/api/profile`) must never be cached: NetworkFirst keys entries by
+            // URL and ignores the bearer token, so a cached GET could serve one
+            // account's rounds/profile to another on a shared device (the
+            // logout rule clears IndexedDB, not Cache Storage). Those endpoints
+            // fall through to NetworkOnly.
             urlPattern: ({ url }) =>
-              url.hostname === 'api.golfcourseapi.com' || url.pathname.startsWith('/api/'),
+              url.hostname === 'api.golfcourseapi.com' ||
+              url.pathname.startsWith('/api/courses') ||
+              url.pathname.startsWith('/api/search'),
             handler: 'NetworkFirst',
             options: {
               cacheName: 'golfcourseapi',

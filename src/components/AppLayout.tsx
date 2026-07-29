@@ -1,5 +1,6 @@
 import { Outlet } from 'react-router-dom'
 import { BottomNav } from './BottomNav'
+import { SyncManager } from '@/sync/SyncManager'
 
 /**
  * Mobile-first app shell: a scrollable content area above a bottom tab bar.
@@ -13,6 +14,7 @@ import { BottomNav } from './BottomNav'
 export function AppLayout() {
   return (
     <div className="app-shell flex flex-col overflow-hidden">
+      <SyncManager />
       <main className="pt-safe mx-auto w-full max-w-md flex-1 overflow-y-auto overscroll-contain px-4 pb-6">
         <Outlet />
       </main>

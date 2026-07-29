@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { getRound, finalizeRound, updateHoleInRound } from '@/db/roundsRepo'
+import { triggerSync } from '@/sync/controller'
 import { computeTotals, ROUND_LENGTH_LABEL } from '@/domain/round'
 import { ChevronLeftIcon, SpinnerIcon } from '@/components/icons'
 import { StatsWidget } from './StatsWidget'
@@ -64,6 +65,8 @@ export function RoundSummaryPage() {
     if (!round) return
     setSaving(true)
     await finalizeRound(round.id)
+    // Best-effort: push the finalized round now if signed in (no-op otherwise).
+    triggerSync()
     navigate('/rounds')
   }
 
