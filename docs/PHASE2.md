@@ -113,9 +113,10 @@ sequenceDiagram
   - Document shape: the existing `Round` fields **plus** `userId`, `deletedAt`
     (nullable ISO for tombstones), a monotonic server `version` and
     `serverUpdatedAt` (both stamped by the server on every write — the LWW
-    authority, see §11.1), and the Cosmos-native `_ts` used as the pull cursor.
-  - `userId`, `version`, `serverUpdatedAt`, and `_ts` are **server-owned**: the
-    server ignores any of these that appear in a request body and always
+    authority, see §11.1), and `serverTs` (server-stamped epoch-ms, the pull
+    cursor — see the §5.1a note).
+  - `userId`, `version`, `serverUpdatedAt`, and `serverTs` are **server-owned**:
+    the server ignores any of these that appear in a request body and always
     (re)stamps them (§11.7).
   - **Tombstone TTL:** deleted documents carry a Cosmos per-item `ttl` so the
     server garbage-collects them 90 days after `deletedAt` (§11.3). A device
@@ -130,6 +131,22 @@ sequenceDiagram
 
 RU/serverless note: access is always a point-read or a single-partition query by
 `userId`, which keeps RU cost minimal and predictable.
+
+### 5.1a Pull cursor is a server-owned `serverTs`, not Cosmos `_ts`
+
+**Decision (implementation):** the pull cursor is a **server-stamped `serverTs`
+(epoch ms)** written on every accepted push, not the Cosmos-native `_ts`. `pull`
+orders and keyset-paginates on `(serverTs ASC, id ASC)`.
+
+**Why:** a stable *total* order is required so paging can't skip records that
+share a timestamp (§11.9), which means a composite index on the two ordered
+paths. Cosmos does **not** reliably permit composite indexes over *system*
+property paths like `/_ts`, so `(/_ts, /id)` could be rejected at container
+creation or fail every `pull` at query time. A user-owned field
+(`/serverTs`) is always compositable, and epoch-ms resolution also makes
+same-timestamp ties rarer than `_ts`'s seconds. `serverTs` is server-owned
+(§11.7) and stripped from pulled rounds like `_ts`. The container's composite
+index over `(/serverTs, /id)` is in `docs/PHASE2-SETUP.md`.
 
 ### 5.2 Client (Dexie) changes
 
@@ -186,8 +203,8 @@ concurrent edit (§11.2).
     **capped at 100 per request** (§11.8); the client pages through larger sets.
   - The server **validates every incoming round server-side** (a backend
     equivalent of `domain/backup.ts:validateRound`), **ignores** any
-    `userId`/`version`/`serverUpdatedAt`/`_ts` in the body, and stamps `userId`
-    from the JWT (§11.7).
+    `userId`/`version`/`serverUpdatedAt`/`serverTs`/`_ts` in the body, and stamps
+    `userId` from the JWT (§11.7).
   - Upserts each into Cosmos under LWW: accepted **iff** the incoming base
     `version` matches the stored `version` (or the doc is new); on accept the
     server bumps `version` and `serverUpdatedAt`. A tombstone always beats a
@@ -197,12 +214,15 @@ concurrent edit (§11.2).
     local round is unchanged since it was pushed; otherwise leave it dirty for
     the next round-trip. Rejected records (stale base version) tell the client to
     pull and re-apply.
-- `GET /api/sync/pull?since=<ts>&limit=100`
-  - Returns the user's rounds with server `_ts >= since` (including tombstones),
-    plus the new `maxTs` cursor and a continuation flag. **`>=` not `>`** because
-    Cosmos `_ts` is second-resolution — using `>` can skip documents written in
-    the same second as the cursor; apply is idempotent LWW so re-seeing a record
-    is harmless (§11.9).
+- `GET /api/sync/pull?since=<serverTs>&sinceId=<id>&limit=100`
+  - Returns the user's rounds ordered by `(serverTs, id)` with
+    `(serverTs, id) > (since, sinceId)` (including tombstones), plus the new
+    `maxTs`/`maxId` keyset cursor and a continuation flag. The first page of a
+    run sends an empty `sinceId`, which reduces the predicate to
+    `serverTs >= since` so a boundary record is re-seen, not skipped; apply is
+    idempotent LWW so re-seeing is harmless (§11.9). Keyset (not OFFSET) paging
+    is required so records sharing a timestamp can't be skipped across pages;
+    the cursor field is a server-owned `serverTs`, not `_ts` (§5.1a).
   - If `since` is older than the tombstone TTL, the server signals **full
     resync** instead of a delta (§11.3).
 - A single round-trip = push local changes, then pull remote changes since the
@@ -324,8 +344,8 @@ kept only as a user-facing "last edited" value.
 (`roundsRepo.ts`). Deciding a cross-device winner by that clock means a device
 with a fast/wrong clock silently wins every conflict and discards correct edits.
 A server-authoritative version removes clock skew *and* the equal-timestamp tie
-(§11.2) in one move. (The pull cursor was already server-side via Cosmos `_ts` —
-only winner-selection needed fixing.)
+(§11.2) in one move. (The pull cursor is server-side too — a server-stamped
+`serverTs`, §5.1a — so only winner-selection needed fixing.)
 
 ### 11.2 Delete wins; equal versions are deterministic
 
@@ -373,7 +393,7 @@ edits reconcile by the same server-authoritative LWW as rounds.
 
 ### 11.7 Server trusts only the JWT; validates all input
 
-- `userId` (and `version`/`serverUpdatedAt`/`_ts`) always come from the server —
+- `userId` (and `version`/`serverUpdatedAt`/`serverTs`/`_ts`) always come from the server —
   any such fields in a request body are ignored and re-stamped.
 - The `push` endpoint validates every incoming round **server-side** — a backend
   equivalent of `domain/backup.ts:validateRound` — before storing. The backend
@@ -386,15 +406,26 @@ edits reconcile by the same server-authoritative LWW as rounds.
 ### 11.8 Batching / paging
 
 `push` accepts at most **100 rounds per request**; `pull` returns at most **100**
-plus a continuation flag and the `maxTs` cursor. First-login merge and first
-pull page through rather than sending one unbounded body.
+plus a continuation flag and the `(maxTs, maxId)` keyset cursor. First-login
+merge and first pull page through rather than sending one unbounded body.
 
-### 11.9 Pull uses `_ts >= since` with idempotent apply
+### 11.9 Pull uses a `(serverTs, id)` keyset with `>=` at the boundary
 
-Cosmos `_ts` is second-resolution, so `> since` can skip documents written in the
-same second the cursor was captured. `pull` uses `>=` and relies on apply being
-idempotent LWW (re-seeing a record is a no-op) — this must not be "optimized" to
-`>`.
+`pull` paginates by a **keyset** over the total order `(serverTs ASC, id ASC)`:
+`(serverTs, id) > (since, sinceId)`. Two hazards this closes:
+
+- **Skipping.** Ordering by a timestamp alone is not a total order (ties are
+  unordered), and OFFSET paging over a non-total order can silently *skip* rows
+  that share a timestamp across separate page queries. A keyset over
+  `(serverTs, id)` is stable across requests and cannot skip or duplicate.
+- **Boundary loss.** The first page of a run passes an empty `sinceId`, so the
+  predicate reduces to `serverTs >= since` (not `>`), re-seeing any record at
+  the exact cursor timestamp; apply is idempotent LWW, so re-seeing is a no-op.
+  This must not be "optimized" to a strict `>` on the timestamp.
+
+The cursor field is a **server-owned `serverTs` (epoch ms)**, not Cosmos `_ts` —
+see §5.1a for why (composite-index support on system paths). Epoch-ms resolution
+also makes same-timestamp ties rarer than `_ts`'s seconds.
 
 ### 11.10 Every read path excludes tombstones
 
