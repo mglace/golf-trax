@@ -96,13 +96,14 @@ async function pushChanges(token: string, userId: string): Promise<void> {
 /** Pull remote changes since the cursor and apply LWW, paging until drained. */
 async function pullChanges(token: string, userId: string): Promise<void> {
   const start = await getSyncState()
-  // Keyset pagination over the server's total `(_ts, id)` order. `sinceTs` seeds
-  // from the persisted cursor; `sinceId` starts empty so the first page re-sees
-  // the whole boundary second (`_ts >= since`, §11.9). Pages then advance by the
-  // (_ts, id) keyset — stable across requests and immune to the row-skipping
-  // that OFFSET paging suffers when many rows share one second. The persisted
-  // cursor stays a single `lastPulledTs`; on crash the run restarts at it with
-  // an empty sinceId and re-scans that second (idempotent apply, §11.4).
+  // Keyset pagination over the server's total `(serverTs, id)` order. `sinceTs`
+  // seeds from the persisted cursor (server-owned `serverTs`, epoch ms); the
+  // empty `sinceId` on the first page makes the predicate re-see the whole
+  // boundary timestamp (`serverTs >= since`, §11.9). Pages then advance by the
+  // (serverTs, id) keyset — stable across requests and immune to the row-skip
+  // that OFFSET paging suffers when rows share a timestamp. The persisted cursor
+  // stays a single `lastPulledTs`; on crash the run restarts at it with an empty
+  // sinceId and re-scans that timestamp (idempotent apply, §11.4).
   let sinceTs = start.userId === userId ? start.lastPulledTs : 0
   let sinceId = ''
   for (;;) {

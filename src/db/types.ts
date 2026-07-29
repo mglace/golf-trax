@@ -112,7 +112,8 @@ export interface Profile {
  */
 export interface SyncState {
   id: 'sync'
-  /** Cosmos `_ts` high-water mark applied locally; the `pull?since=` cursor. */
+  /** Server `serverTs` (epoch ms) high-water mark applied locally; the
+   * `pull?since=` cursor. */
   lastPulledTs: number
   /** The account currently syncing, or null when signed out / local-only. */
   userId: string | null

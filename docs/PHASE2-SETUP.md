@@ -81,8 +81,8 @@ az cosmosdb sql database create \
 
 # rounds: one doc per round, incl. tombstones (per-item TTL enabled so
 # tombstones self-GC 90 days after deletedAt — PHASE2.md §11.3).
-# `pull` orders by (_ts ASC, id ASC) for stable keyset paging, so the container
-# needs a matching composite index (see rounds-index.json below).
+# `pull` orders by (serverTs ASC, id ASC) for stable keyset paging, so the
+# container needs a matching composite index (see rounds-index.json below).
 az cosmosdb sql container create \
   --account-name golftrax-cosmos --resource-group golftrax-rg \
   --database-name golftrax --name rounds \
@@ -102,9 +102,9 @@ az cosmosdb sql container create \
 > rounds never expire while deleted ones GC after 90 days.
 
 The `rounds-index.json` referenced above keeps the default indexing and adds the
-composite index `pull` needs for its `ORDER BY c._ts ASC, c.id ASC` (a total
-order is required so keyset paging can't skip records that share a `_ts` second
-— PHASE2.md §11.9):
+composite index `pull` needs for its `ORDER BY c.serverTs ASC, c.id ASC` (a total
+order is required so keyset paging can't skip records that share a timestamp —
+PHASE2.md §11.9):
 
 ```json
 {
@@ -114,12 +114,18 @@ order is required so keyset paging can't skip records that share a `_ts` second
   "excludedPaths": [{ "path": "/\"_etag\"/?" }],
   "compositeIndexes": [
     [
-      { "path": "/_ts", "order": "ascending" },
+      { "path": "/serverTs", "order": "ascending" },
       { "path": "/id", "order": "ascending" }
     ]
   ]
 }
 ```
+
+> `pull` paginates on **`serverTs`** — a server-stamped epoch-ms field on each
+> round — rather than the Cosmos-native `_ts`. `_ts` is a *system* property, and
+> composite indexes over system paths aren't reliably supported; a user-owned
+> field is always indexable, and epoch-ms also gives finer resolution than
+> `_ts`'s seconds. The server sets `serverTs` on every accepted write.
 
 ### Server (Functions) settings
 

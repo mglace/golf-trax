@@ -16,7 +16,7 @@ import { setSyncUser } from './syncState'
 
 const USER = 'auth0|matt'
 const getToken = async () => 'test-token'
-// A fixed "now". Seeded _ts must be realistic epoch seconds near this — a tiny
+// A fixed "now". Seeded serverTs must be realistic epoch ms near this — a tiny
 // value (e.g. 1000) looks >90 days old to the cursor and spuriously resyncs.
 const NOW_MS = Date.parse('2026-07-28T00:00:00.000Z')
 
@@ -27,19 +27,20 @@ interface StoredDoc extends Record<string, unknown> {
   version: number
   serverUpdatedAt?: string
   deletedAt?: string
-  _ts: number
+  /** Server-owned pagination key (epoch ms) — mirrors the real `serverTs`. */
+  serverTs: number
 }
 
 class FakeServer {
   docs = new Map<string, StoredDoc>()
-  // Recent epoch seconds so cursors are never spuriously "stale" (§11.3).
-  clock = Math.floor(NOW_MS / 1000) - 1000
+  // Recent epoch ms so cursors are never spuriously "stale" (§11.3).
+  clock = NOW_MS - 1_000_000
   nowMs = NOW_MS
 
   /** Seed a doc as if written by another device. */
   seed(doc: Partial<StoredDoc> & { id: string }): void {
     this.clock += 1
-    this.docs.set(doc.id, { version: 1, _ts: this.clock, ...doc } as StoredDoc)
+    this.docs.set(doc.id, { version: 1, serverTs: this.clock, ...doc } as StoredDoc)
   }
 
   push(body: { rounds: Array<Record<string, unknown>> }) {
@@ -58,8 +59,8 @@ class FakeServer {
         continue
       }
       this.clock += 1
-      const serverUpdatedAt = new Date(this.clock * 1000).toISOString()
-      const doc = { ...raw, id, version: decision.version, serverUpdatedAt, _ts: this.clock } as StoredDoc
+      const serverUpdatedAt = new Date(this.clock).toISOString()
+      const doc = { ...raw, id, version: decision.version, serverUpdatedAt, serverTs: this.clock } as StoredDoc
       this.docs.set(id, doc)
       results.push({ id, accepted: true, version: decision.version, serverUpdatedAt })
     }
@@ -67,31 +68,29 @@ class FakeServer {
   }
 
   pull(since: number, sinceId: string, limit: number) {
-    if (isCursorStale(since * 1000, this.nowMs)) {
+    if (isCursorStale(since, this.nowMs)) {
       return { resync: true, rounds: [], maxTs: 0, maxId: '', hasMore: false }
     }
-    // Keyset over the same total `(_ts, id)` order the real Cosmos query uses —
-    // now that the server's ORDER BY includes `id`, this tiebreaker is faithful
-    // (not a mask): both scan the same stable order, so paging can't skip rows.
-    // Order by (_ts, id) using ordinal id comparison — the SAME comparison the
-    // `id > sinceId` keyset filter uses — mirroring Cosmos, where ORDER BY and
-    // the range predicate share one collation. (Using localeCompare to sort but
-    // `>` to filter would desync the two and break keyset paging.)
+    // Keyset over the same total `(serverTs, id)` order the real Cosmos query
+    // uses, with ordinal id comparison — the SAME comparison the `id > sinceId`
+    // keyset filter uses — mirroring Cosmos, where ORDER BY and the range
+    // predicate share one collation. (Sorting with localeCompare but filtering
+    // with `>` would desync the two and break keyset paging.)
     const idCmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
     const all = [...this.docs.values()]
-      .filter((d) => d._ts > since || (d._ts === since && d.id > sinceId))
-      .sort((a, b) => a._ts - b._ts || idCmp(a.id, b.id))
+      .filter((d) => d.serverTs > since || (d.serverTs === since && d.id > sinceId))
+      .sort((a, b) => a.serverTs - b.serverTs || idCmp(a.id, b.id))
     const page = all.slice(0, limit)
     const rounds = page.map((d) => {
-      // Strip the server-internal _ts, like the real toClientRound.
+      // Strip the server-internal serverTs, like the real toClientRound.
       const copy: Record<string, unknown> = { ...d }
-      delete copy._ts
+      delete copy.serverTs
       return copy
     })
     const last = page[page.length - 1]
     return {
       rounds,
-      maxTs: last ? last._ts : since,
+      maxTs: last ? last.serverTs : since,
       maxId: last ? last.id : sinceId,
       hasMore: page.length === limit,
     }
@@ -189,15 +188,15 @@ describe('pull', () => {
     expect(local?.dirty).toBe(0)
   })
 
-  it('drains every record via keyset paging when a full page shares one _ts', async () => {
-    // 150 rounds all stamped the same second — the case that stalls a
+  it('drains every record via keyset paging when a full page shares one serverTs', async () => {
+    // 150 rounds all stamped the same serverTs — the case that stalls a
     // maxTs-only cursor and that OFFSET paging can skip. Keyset paging over the
-    // total (_ts, id) order must drain all of them exactly once (§11.9 fix).
-    // A realistic recent second (Cosmos _ts is current epoch seconds); a tiny
-    // value would look >90 days stale to the cursor and spuriously resync.
-    const ts = Math.floor(server.nowMs / 1000)
+    // total (serverTs, id) order must drain all of them exactly once (§11.9 fix).
+    // A realistic recent epoch-ms value; a tiny one would look >90 days stale to
+    // the cursor and spuriously resync.
+    const ts = server.nowMs
     for (let i = 0; i < 150; i += 1) {
-      server.docs.set(`s${i}`, { ...round({ id: `s${i}` }), version: 1, _ts: ts } as StoredDoc)
+      server.docs.set(`s${i}`, { ...round({ id: `s${i}` }), version: 1, serverTs: ts } as StoredDoc)
     }
     await sync(getToken, USER)
     const count = await db.rounds.filter((r) => r.id.startsWith('s')).count()
@@ -222,8 +221,8 @@ describe('pull', () => {
 
 describe('stale-cursor resync (§11.3)', () => {
   it('drops account rounds the server no longer has and re-pulls fresh', async () => {
-    // Cursor 91 days old → server signals full resync.
-    const stale = Math.floor(server.nowMs / 1000) - 91 * 86_400
+    // Cursor 91 days old (epoch ms) → server signals full resync.
+    const stale = server.nowMs - 91 * 86_400_000
     await setSyncUser(USER)
     await db.syncState.put({ id: 'sync', userId: USER, lastPulledTs: stale })
     // A local account round the server no longer has (should be cleared).

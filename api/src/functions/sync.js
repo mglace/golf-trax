@@ -16,18 +16,20 @@ const {
 /**
  * Phase 2 sync endpoints (PHASE2.md §6.2). Both are JWT-protected; the user id
  * comes only from the verified token, and every server-owned field
- * (userId/version/serverUpdatedAt/_ts) is stamped by the server, never trusted
- * from the body (§11.7).
+ * (userId/version/serverUpdatedAt/serverTs/_ts) is stamped by the server, never
+ * trusted from the body (§11.7).
  *
  *   POST /api/sync/push  { rounds: Round[] }        (<=100, §11.8)
- *   GET  /api/sync/pull?since=<_ts>&limit=<n<=100>
+ *   GET  /api/sync/pull?since=<serverTs ms>&sinceId=<id>&limit=<n<=100>
  */
 
 /** Strip Cosmos/system + server-internal fields before returning a round. */
 function toClientRound(doc) {
   const {
-    // dropped: userId, ttl, and Cosmos-managed _rid/_self/_etag/_attachments/_ts
+    // dropped: userId, serverTs (pagination key), ttl, and Cosmos-managed
+    // _rid/_self/_etag/_attachments/_ts
     userId,
+    serverTs,
     ttl,
     _rid,
     _self,
@@ -97,7 +99,7 @@ const pushHandler = requireAuth(async (request, context, { userId }) => {
       }
 
       // An idempotent re-delete (version unchanged) is already stored — skip the
-      // write so we don't churn _ts and re-broadcast an unchanged tombstone.
+      // write so we don't churn serverTs and re-broadcast an unchanged tombstone.
       const isNoop = stored && decision.version === versionOf(stored)
       if (isNoop) {
         results.push({
@@ -109,12 +111,20 @@ const pushHandler = requireAuth(async (request, context, { userId }) => {
         continue
       }
 
-      const serverUpdatedAt = new Date().toISOString()
+      // `serverTs` (epoch ms) is the pagination key: a server-owned, monotonic
+      // field ordered on in `pull`. We deliberately do NOT paginate on the
+      // Cosmos-native `_ts` because a composite index over a *system* path
+      // (`/_ts`) is not reliably supported; a user-owned field sidesteps that
+      // and gives ms resolution (vs `_ts`'s seconds). `serverUpdatedAt` is the
+      // same instant as an ISO string for display.
+      const serverTs = Date.now()
+      const serverUpdatedAt = new Date(serverTs).toISOString()
       const doc = {
         ...clean,
         userId,
         version: decision.version,
         serverUpdatedAt,
+        serverTs,
       }
       // Tombstones self-GC 90 days after deletedAt via a per-item ttl (§11.3);
       // live rounds carry no ttl so they never expire.
@@ -170,23 +180,25 @@ const pullHandler = requireAuth(async (request, context, { userId }) => {
 
   // A cursor older than the tombstone TTL can't trust a delta — tell the client
   // to full-resync from scratch (§11.3) rather than risk delete-resurrection.
-  if (isCursorStale(since * 1000, Date.now())) {
+  // `since` is epoch ms (the server-owned `serverTs`), so no unit conversion.
+  if (isCursorStale(since, Date.now())) {
     return json(200, { resync: true, rounds: [], maxTs: 0, maxId: '', hasMore: false })
   }
 
   try {
-    // Keyset pagination over a TOTAL order `(_ts ASC, id ASC)`. `_ts` alone is
-    // not a total order (second-resolution, ties unordered), and OFFSET paging
-    // over a non-total order can silently SKIP rows that share a second across
-    // separate page queries. A keyset — `(_ts, id) > (since, sinceId)` — is
+    // Keyset pagination over a TOTAL order `(serverTs ASC, id ASC)`. Ordering on
+    // a single timestamp isn't a total order (ties unordered), and OFFSET paging
+    // over a non-total order can silently SKIP rows that share a timestamp across
+    // separate page queries. A keyset — `(serverTs, id) > (since, sinceId)` — is
     // stable across requests and immune to that. The first page of a run passes
-    // sinceId='' so the predicate reduces to `_ts >= since`, preserving the
-    // §11.9 boundary re-see (idempotent apply). Requires a composite index on
-    // (/_ts ASC, /id ASC) — see docs/PHASE2-SETUP.md.
+    // sinceId='' so the predicate reduces to `serverTs >= since`, preserving the
+    // §11.9 boundary re-see (idempotent apply). `serverTs` is a user-owned field
+    // (not the system `/_ts`) so its composite index is always permitted — see
+    // docs/PHASE2-SETUP.md.
     const query = {
       query:
-        'SELECT * FROM c WHERE c._ts > @since OR (c._ts = @since AND c.id > @sinceId) ' +
-        'ORDER BY c._ts ASC, c.id ASC OFFSET 0 LIMIT @limit',
+        'SELECT * FROM c WHERE c.serverTs > @since OR (c.serverTs = @since AND c.id > @sinceId) ' +
+        'ORDER BY c.serverTs ASC, c.id ASC OFFSET 0 LIMIT @limit',
       parameters: [
         { name: '@since', value: since },
         { name: '@sinceId', value: sinceId },
@@ -199,7 +211,7 @@ const pullHandler = requireAuth(async (request, context, { userId }) => {
 
     const rounds = resources.map(toClientRound)
     const last = resources[resources.length - 1]
-    const maxTs = last ? last._ts : since
+    const maxTs = last ? last.serverTs : since
     const maxId = last ? last.id : sinceId
     const hasMore = resources.length === limit
     return json(200, { rounds, maxTs, maxId, hasMore })

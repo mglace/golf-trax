@@ -8,7 +8,7 @@
  * (rather than spreading the body) so nothing unexpected — and nothing
  * server-owned — is ever persisted from the request body.
  *
- * Server-owned fields (userId, version, serverUpdatedAt, _ts, ttl) and
+ * Server-owned fields (userId, version, serverUpdatedAt, serverTs, _ts, ttl) and
  * client-local fields (dirty, owner) are deliberately NOT copied here; the push
  * handler stamps userId/version/serverUpdatedAt itself.
  */
