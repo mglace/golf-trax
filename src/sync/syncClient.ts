@@ -16,6 +16,7 @@ import {
   reconcilePushAck,
   toSyncPayload,
   SYNC_PAGE_LIMIT,
+  TOMBSTONE_TTL_DAYS,
   type PushAck,
   type SyncRound,
 } from '@/domain/sync'
@@ -30,6 +31,7 @@ interface PushResponse {
 interface PullResponse {
   rounds?: SyncRound[]
   maxTs?: number
+  maxId?: string
   hasMore?: boolean
   resync?: boolean
 }
@@ -94,15 +96,18 @@ async function pushChanges(token: string, userId: string): Promise<void> {
 /** Pull remote changes since the cursor and apply LWW, paging until drained. */
 async function pullChanges(token: string, userId: string): Promise<void> {
   const start = await getSyncState()
-  // `since` is fixed for the whole run; pages advance by OFFSET, not by moving
-  // the cursor, so a full page sharing one `_ts` can't stall (§11.9). The cursor
-  // is still persisted per page for crash-safety — on restart the run re-reads
-  // it as `since` and re-pages from offset 0 (idempotent apply, §11.4).
-  const since = start.userId === userId ? start.lastPulledTs : 0
-  let offset = 0
+  // Keyset pagination over the server's total `(_ts, id)` order. `sinceTs` seeds
+  // from the persisted cursor; `sinceId` starts empty so the first page re-sees
+  // the whole boundary second (`_ts >= since`, §11.9). Pages then advance by the
+  // (_ts, id) keyset — stable across requests and immune to the row-skipping
+  // that OFFSET paging suffers when many rows share one second. The persisted
+  // cursor stays a single `lastPulledTs`; on crash the run restarts at it with
+  // an empty sinceId and re-scans that second (idempotent apply, §11.4).
+  let sinceTs = start.userId === userId ? start.lastPulledTs : 0
+  let sinceId = ''
   for (;;) {
     const res = await apiFetch(
-      `sync/pull?since=${since}&offset=${offset}&limit=${SYNC_PAGE_LIMIT}`,
+      `sync/pull?since=${sinceTs}&sinceId=${encodeURIComponent(sinceId)}&limit=${SYNC_PAGE_LIMIT}`,
       token,
     )
     if (!res.ok) throw new Error(`pull failed: ${res.status}`)
@@ -119,7 +124,7 @@ async function pullChanges(token: string, userId: string): Promise<void> {
     }
 
     const remote = data.rounds ?? []
-    const maxTs = data.maxTs ?? since
+    const maxTs = data.maxTs ?? sinceTs
     // Apply changes AND advance the cursor in one transaction so a crash can
     // never leave the cursor ahead of the applied data (§11.4). The cursor only
     // moves forward (monotonic) even if a concurrent write already advanced it.
@@ -135,8 +140,24 @@ async function pullChanges(token: string, userId: string): Promise<void> {
     })
 
     if (!data.hasMore) return
-    offset += SYNC_PAGE_LIMIT
+    sinceTs = maxTs
+    sinceId = data.maxId ?? ''
   }
+}
+
+/**
+ * Reap fully-synced tombstones once they pass the server's retention window
+ * (PHASE2.md §5.2, §11.3). A tombstone that is `dirty=0` (already pushed) and
+ * older than the TTL is hard-removed locally — matching the server's own TTL
+ * GC. By then every device syncing within the window has seen the delete and
+ * the pull cursor has advanced past it, so it won't be re-pulled. Dirty
+ * tombstones (an unpushed delete) are kept until they sync.
+ */
+export async function reapTombstones(nowMs = Date.now()): Promise<void> {
+  const cutoff = nowMs - TOMBSTONE_TTL_DAYS * 86_400_000
+  await db.rounds
+    .filter((r) => r.dirty !== 1 && !!r.deletedAt && Date.parse(r.deletedAt) < cutoff)
+    .delete()
 }
 
 /**
@@ -168,6 +189,7 @@ async function runSync(getToken: GetToken, userId: string): Promise<SyncStatus> 
   try {
     await pushChanges(token, userId)
     await pullChanges(token, userId)
+    await reapTombstones()
     store.markSynced(Date.now())
     return 'synced'
   } catch {

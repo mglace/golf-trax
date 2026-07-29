@@ -121,7 +121,34 @@ const pushHandler = requireAuth(async (request, context, { userId }) => {
       if (decision.deleted && clean.deletedAt) {
         doc.ttl = tombstoneTtlSeconds(clean.deletedAt, Date.now())
       }
-      await container.items.upsert(doc)
+
+      // Make the version compare-and-set atomic. Without a precondition, the
+      // read-then-write above is a TOCTOU: two devices reading the same stored
+      // version both `decidePush → accept vN+1` and the second write clobbers
+      // the first (silent lost update). Gate the write on the exact document we
+      // read — IfMatch(_etag) for an update, create for a brand-new id — and
+      // map a precondition/conflict failure to a rejection so the client pulls
+      // the winning version and retries.
+      try {
+        if (stored) {
+          await container
+            .item(clean.id, userId)
+            .replace(doc, { accessCondition: { type: 'IfMatch', condition: stored._etag } })
+        } else {
+          await container.items.create(doc)
+        }
+      } catch (err) {
+        if (err.code === 412 || err.code === 409) {
+          results.push({
+            id: clean.id,
+            accepted: false,
+            version: versionOf(stored),
+            serverUpdatedAt: stored && stored.serverUpdatedAt,
+          })
+          continue
+        }
+        throw err
+      }
       results.push({ id: clean.id, accepted: true, version: decision.version, serverUpdatedAt })
     }
   } catch (err) {
@@ -135,7 +162,7 @@ const pushHandler = requireAuth(async (request, context, { userId }) => {
 
 const pullHandler = requireAuth(async (request, context, { userId }) => {
   const since = Math.max(0, parseInt(request.query.get('since') || '0', 10) || 0)
-  const offset = Math.max(0, parseInt(request.query.get('offset') || '0', 10) || 0)
+  const sinceId = request.query.get('sinceId') || ''
   const limitParam = parseInt(request.query.get('limit') || '', 10)
   const limit = Number.isFinite(limitParam)
     ? Math.min(SYNC_PAGE_LIMIT, Math.max(1, limitParam))
@@ -144,21 +171,25 @@ const pullHandler = requireAuth(async (request, context, { userId }) => {
   // A cursor older than the tombstone TTL can't trust a delta — tell the client
   // to full-resync from scratch (§11.3) rather than risk delete-resurrection.
   if (isCursorStale(since * 1000, Date.now())) {
-    return json(200, { resync: true, rounds: [], maxTs: 0, hasMore: false })
+    return json(200, { resync: true, rounds: [], maxTs: 0, maxId: '', hasMore: false })
   }
 
   try {
-    // `_ts >= since` (not `>`) because Cosmos `_ts` is second-resolution; apply
-    // is idempotent LWW so re-seeing a boundary record is harmless (§11.9).
-    // Paging within a run is by OFFSET (not by advancing `since`) so a full page
-    // of records sharing one second can't stall the cursor into an infinite
-    // loop; OFFSET also needs only the default `_ts` range index, no composite.
+    // Keyset pagination over a TOTAL order `(_ts ASC, id ASC)`. `_ts` alone is
+    // not a total order (second-resolution, ties unordered), and OFFSET paging
+    // over a non-total order can silently SKIP rows that share a second across
+    // separate page queries. A keyset — `(_ts, id) > (since, sinceId)` — is
+    // stable across requests and immune to that. The first page of a run passes
+    // sinceId='' so the predicate reduces to `_ts >= since`, preserving the
+    // §11.9 boundary re-see (idempotent apply). Requires a composite index on
+    // (/_ts ASC, /id ASC) — see docs/PHASE2-SETUP.md.
     const query = {
       query:
-        'SELECT * FROM c WHERE c._ts >= @since ORDER BY c._ts ASC OFFSET @offset LIMIT @limit',
+        'SELECT * FROM c WHERE c._ts > @since OR (c._ts = @since AND c.id > @sinceId) ' +
+        'ORDER BY c._ts ASC, c.id ASC OFFSET 0 LIMIT @limit',
       parameters: [
         { name: '@since', value: since },
-        { name: '@offset', value: offset },
+        { name: '@sinceId', value: sinceId },
         { name: '@limit', value: limit },
       ],
     }
@@ -167,9 +198,11 @@ const pullHandler = requireAuth(async (request, context, { userId }) => {
       .fetchAll()
 
     const rounds = resources.map(toClientRound)
-    const maxTs = resources.reduce((m, d) => (d._ts > m ? d._ts : m), since)
+    const last = resources[resources.length - 1]
+    const maxTs = last ? last._ts : since
+    const maxId = last ? last.id : sinceId
     const hasMore = resources.length === limit
-    return json(200, { rounds, maxTs, hasMore })
+    return json(200, { rounds, maxTs, maxId, hasMore })
   } catch (err) {
     return mapCosmosError(err, context)
   }

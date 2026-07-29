@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '@/db/db'
 import type { Round } from '@/db/types'
 import { decidePush, isCursorStale, versionOf } from '@/domain/sync'
-import { sync, prepareMerge, clearAccountRounds } from './syncClient'
+import { sync, prepareMerge, clearAccountRounds, reapTombstones } from './syncClient'
 import { setSyncUser } from './syncState'
 
 /**
@@ -16,6 +16,9 @@ import { setSyncUser } from './syncState'
 
 const USER = 'auth0|matt'
 const getToken = async () => 'test-token'
+// A fixed "now". Seeded _ts must be realistic epoch seconds near this — a tiny
+// value (e.g. 1000) looks >90 days old to the cursor and spuriously resyncs.
+const NOW_MS = Date.parse('2026-07-28T00:00:00.000Z')
 
 // --- in-memory server (mirrors api/src/functions/sync.js) ----------------
 
@@ -29,8 +32,9 @@ interface StoredDoc extends Record<string, unknown> {
 
 class FakeServer {
   docs = new Map<string, StoredDoc>()
-  clock = 1000
-  nowMs = Date.parse('2026-07-28T00:00:00.000Z')
+  // Recent epoch seconds so cursors are never spuriously "stale" (§11.3).
+  clock = Math.floor(NOW_MS / 1000) - 1000
+  nowMs = NOW_MS
 
   /** Seed a doc as if written by another device. */
   seed(doc: Partial<StoredDoc> & { id: string }): void {
@@ -62,22 +66,35 @@ class FakeServer {
     return { results }
   }
 
-  pull(since: number, offset: number, limit: number) {
+  pull(since: number, sinceId: string, limit: number) {
     if (isCursorStale(since * 1000, this.nowMs)) {
-      return { resync: true, rounds: [], maxTs: 0, hasMore: false }
+      return { resync: true, rounds: [], maxTs: 0, maxId: '', hasMore: false }
     }
+    // Keyset over the same total `(_ts, id)` order the real Cosmos query uses —
+    // now that the server's ORDER BY includes `id`, this tiebreaker is faithful
+    // (not a mask): both scan the same stable order, so paging can't skip rows.
+    // Order by (_ts, id) using ordinal id comparison — the SAME comparison the
+    // `id > sinceId` keyset filter uses — mirroring Cosmos, where ORDER BY and
+    // the range predicate share one collation. (Using localeCompare to sort but
+    // `>` to filter would desync the two and break keyset paging.)
+    const idCmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
     const all = [...this.docs.values()]
-      .filter((d) => d._ts >= since)
-      .sort((a, b) => a._ts - b._ts || a.id.localeCompare(b.id))
-    const page = all.slice(offset, offset + limit)
+      .filter((d) => d._ts > since || (d._ts === since && d.id > sinceId))
+      .sort((a, b) => a._ts - b._ts || idCmp(a.id, b.id))
+    const page = all.slice(0, limit)
     const rounds = page.map((d) => {
       // Strip the server-internal _ts, like the real toClientRound.
       const copy: Record<string, unknown> = { ...d }
       delete copy._ts
       return copy
     })
-    const maxTs = page.reduce((m, d) => (d._ts > m ? d._ts : m), since)
-    return { rounds, maxTs, hasMore: page.length === limit }
+    const last = page[page.length - 1]
+    return {
+      rounds,
+      maxTs: last ? last._ts : since,
+      maxId: last ? last.id : sinceId,
+      hasMore: page.length === limit,
+    }
   }
 }
 
@@ -92,7 +109,7 @@ function installFetch(srv: FakeServer) {
     } else if (url.pathname === '/api/sync/pull') {
       payload = srv.pull(
         Number(url.searchParams.get('since') ?? 0),
-        Number(url.searchParams.get('offset') ?? 0),
+        url.searchParams.get('sinceId') ?? '',
         Number(url.searchParams.get('limit') ?? 100),
       )
     } else {
@@ -172,21 +189,25 @@ describe('pull', () => {
     expect(local?.dirty).toBe(0)
   })
 
-  it('terminates and applies every record when a full page shares one _ts', async () => {
-    // 150 rounds all stamped the same second — the case that would loop a
-    // maxTs-only cursor. Offset paging must drain all of them (§11.9 fix).
+  it('drains every record via keyset paging when a full page shares one _ts', async () => {
+    // 150 rounds all stamped the same second — the case that stalls a
+    // maxTs-only cursor and that OFFSET paging can skip. Keyset paging over the
+    // total (_ts, id) order must drain all of them exactly once (§11.9 fix).
+    // A realistic recent second (Cosmos _ts is current epoch seconds); a tiny
+    // value would look >90 days stale to the cursor and spuriously resync.
+    const ts = Math.floor(server.nowMs / 1000)
     for (let i = 0; i < 150; i += 1) {
-      server.docs.set(`s${i}`, { ...round({ id: `s${i}` }), version: 1, _ts: 5000 } as StoredDoc)
+      server.docs.set(`s${i}`, { ...round({ id: `s${i}` }), version: 1, _ts: ts } as StoredDoc)
     }
     await sync(getToken, USER)
     const count = await db.rounds.filter((r) => r.id.startsWith('s')).count()
     expect(count).toBe(150)
-    // Two pull pages (100 + 50) → offset advanced, no infinite loop.
+    // Two pull pages (100 + 50) via keyset advance, no infinite loop.
     const pulls = (global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.filter(
       (c) => String(c[0]).includes('/api/sync/pull'),
     )
     expect(pulls.length).toBe(2)
-    expect((await db.syncState.get('sync'))?.lastPulledTs).toBe(5000)
+    expect((await db.syncState.get('sync'))?.lastPulledTs).toBe(ts)
   })
 
   it('re-applying an unchanged pull is idempotent', async () => {
@@ -235,6 +256,25 @@ describe('logout data rule (§11.5)', () => {
     const state = await db.syncState.get('sync')
     expect(state?.userId).toBeNull()
     expect(state?.lastPulledTs).toBe(0)
+  })
+})
+
+describe('reapTombstones (§11.3)', () => {
+  it('drops synced tombstones past the TTL, keeping recent and dirty ones', async () => {
+    const now = Date.parse('2026-07-28T00:00:00.000Z')
+    const old = new Date(now - 91 * 86_400_000).toISOString()
+    const recent = new Date(now - 10 * 86_400_000).toISOString()
+    await db.rounds.bulkAdd([
+      round({ id: 'old-synced', owner: USER, version: 1, dirty: 0, deletedAt: old }),
+      round({ id: 'old-dirty', owner: USER, version: 1, dirty: 1, deletedAt: old }),
+      round({ id: 'recent-synced', owner: USER, version: 1, dirty: 0, deletedAt: recent }),
+      round({ id: 'alive', owner: USER, version: 1, dirty: 0 }),
+    ])
+    await reapTombstones(now)
+    expect(await db.rounds.get('old-synced')).toBeUndefined() // reaped
+    expect(await db.rounds.get('old-dirty')).toBeDefined() // unpushed delete kept
+    expect(await db.rounds.get('recent-synced')).toBeDefined() // within TTL kept
+    expect(await db.rounds.get('alive')).toBeDefined() // not a tombstone
   })
 })
 

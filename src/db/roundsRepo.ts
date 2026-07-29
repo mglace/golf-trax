@@ -148,11 +148,13 @@ export async function finalizeRound(id: string): Promise<void> {
 /**
  * Delete a round. A round that has ever been synced (or is account-owned) is
  * **soft-deleted** — a tombstone (`deletedAt` + `dirty`) that propagates the
- * delete to other devices and is only hard-removed locally after it has synced
- * (PHASE2.md §5.2). A never-synced, local-only round has nothing to propagate
- * to, so it is hard-deleted immediately — preserving the MVP's behavior for the
- * pure-local user and avoiding tombstones that would linger forever with no
- * account to sync them away.
+ * delete to other devices (PHASE2.md §5.2). The tombstone is hidden from all
+ * reads and retained locally until it is reaped after the 90-day TTL once it
+ * has synced — see `reapTombstones` in the sync engine, which mirrors the
+ * server's own TTL GC (§11.3). A never-synced, local-only round has nothing to
+ * propagate to, so it is hard-deleted immediately — preserving the MVP's
+ * behavior for the pure-local user and avoiding a tombstone that would linger
+ * with no account to sync (and reap) it away.
  */
 export async function deleteRound(id: string): Promise<void> {
   const round = await db.rounds.get(id)

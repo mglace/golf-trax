@@ -81,11 +81,14 @@ az cosmosdb sql database create \
 
 # rounds: one doc per round, incl. tombstones (per-item TTL enabled so
 # tombstones self-GC 90 days after deletedAt — PHASE2.md §11.3).
+# `pull` orders by (_ts ASC, id ASC) for stable keyset paging, so the container
+# needs a matching composite index (see rounds-index.json below).
 az cosmosdb sql container create \
   --account-name golftrax-cosmos --resource-group golftrax-rg \
   --database-name golftrax --name rounds \
   --partition-key-path /userId \
-  --ttl -1   # TTL enabled but no default expiry; tombstones set their own ttl
+  --ttl -1 \
+  --idx @rounds-index.json   # TTL enabled but no default expiry; tombstones set their own ttl
 
 # profile: one doc per user (id === userId).
 az cosmosdb sql container create \
@@ -97,6 +100,26 @@ az cosmosdb sql container create \
 > `--ttl -1` turns the TTL feature **on** for the container without expiring
 > live documents; only tombstones carry a positive per-item `ttl`, so live
 > rounds never expire while deleted ones GC after 90 days.
+
+The `rounds-index.json` referenced above keeps the default indexing and adds the
+composite index `pull` needs for its `ORDER BY c._ts ASC, c.id ASC` (a total
+order is required so keyset paging can't skip records that share a `_ts` second
+— PHASE2.md §11.9):
+
+```json
+{
+  "indexingMode": "consistent",
+  "automatic": true,
+  "includedPaths": [{ "path": "/*" }],
+  "excludedPaths": [{ "path": "/\"_etag\"/?" }],
+  "compositeIndexes": [
+    [
+      { "path": "/_ts", "order": "ascending" },
+      { "path": "/id", "order": "ascending" }
+    ]
+  ]
+}
+```
 
 ### Server (Functions) settings
 
