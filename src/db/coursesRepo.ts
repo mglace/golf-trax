@@ -6,6 +6,11 @@
 import { db } from './db'
 import type { CachedCourse } from './types'
 import type { ApiCourse } from '@/api/types'
+import {
+  buildManualCourse,
+  nextManualCourseId,
+  type ManualCourseInput,
+} from '@/domain/manualCourse'
 
 /** Insert/refresh a course from an API response, preserving prior play metadata. */
 export async function cacheCourse(course: ApiCourse): Promise<void> {
@@ -26,6 +31,21 @@ export async function cacheCourses(courses: ApiCourse[]): Promise<void> {
 
 export async function getCachedCourse(id: number): Promise<CachedCourse | undefined> {
   return db.courses.get(id)
+}
+
+/**
+ * Create and cache a hand-entered course (Phase 2d). Assigns a negative id (one
+ * below the most-negative existing id) so it never collides with GolfCourseAPI
+ * ids, stamps `isManual`, and returns the cached record. The round-creation flow
+ * then treats it like any other cached course.
+ */
+export async function createManualCourse(input: ManualCourseInput): Promise<CachedCourse> {
+  const ids = await db.courses.toCollection().primaryKeys()
+  const id = nextManualCourseId(ids as number[])
+  const course = buildManualCourse(input, id)
+  const record: CachedCourse = { ...course, cachedAt: new Date().toISOString(), isManual: true }
+  await db.courses.put(record)
+  return record
 }
 
 /** Mark a course as just-played (drives the recently-played carousel). */

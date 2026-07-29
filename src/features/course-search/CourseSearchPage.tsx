@@ -4,7 +4,7 @@ import { SearchBar } from './SearchBar'
 import { CourseCard } from './CourseCard'
 import { RecentlyPlayed } from './RecentlyPlayed'
 import { ApiErrorMessage } from '@/components/ApiErrorMessage'
-import { ChevronLeftIcon, SearchIcon, WifiOffIcon } from '@/components/icons'
+import { ChevronLeftIcon, PlusIcon, SearchIcon, WifiOffIcon } from '@/components/icons'
 import { useOnlineStatus } from '@/hooks/useOnlineStatus'
 import { cacheCourse } from '@/db/coursesRepo'
 import type { ApiCourse } from '@/api/types'
@@ -66,6 +66,13 @@ export function CourseSearchPage() {
             <div className="mt-6 flex flex-col items-center gap-2 py-8 text-center text-slate-500">
               <SearchIcon className="h-8 w-8" aria-hidden />
               <p className="text-sm">Search for a course by name or city to get started.</p>
+              <button
+                type="button"
+                onClick={() => navigate('/new/manual')}
+                className="mt-1 text-sm font-semibold text-fairway-700 underline underline-offset-2"
+              >
+                Or add a course manually
+              </button>
             </div>
           </>
         )}
@@ -73,10 +80,15 @@ export function CourseSearchPage() {
         {showEmpty && (
           <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
             <p className="font-medium text-slate-700">No courses found</p>
-            <p className="mt-1">
-              Try a different spelling or search by city. Courses that aren’t in GolfCourseAPI can’t
-              be logged yet.
-            </p>
+            <p className="mt-1">Try a different spelling or search by city — or add it yourself.</p>
+            <button
+              type="button"
+              onClick={() => navigate('/new/manual')}
+              className="mt-3 inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-fairway-700 px-4 py-2.5 font-semibold text-white active:bg-fairway-800"
+            >
+              <PlusIcon className="h-5 w-5" aria-hidden />
+              Add this course manually
+            </button>
           </div>
         )}
 

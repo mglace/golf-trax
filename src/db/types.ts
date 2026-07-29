@@ -20,6 +20,12 @@ export interface CachedCourse extends ApiCourse {
   lastPlayedDate?: string
   /** ISO timestamp of when this course was cached/refreshed. */
   cachedAt: string
+  /**
+   * True for a course the user entered by hand (Phase 2d) rather than one from
+   * GolfCourseAPI. Manual courses carry a negative `id` so they never collide
+   * with API ids, and are badged in the UI. Local-only bookkeeping.
+   */
+  isManual?: boolean
 }
 
 /**
