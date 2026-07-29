@@ -83,7 +83,7 @@ export function CourseSearchPage() {
             <p className="mt-1">Try a different spelling or search by city — or add it yourself.</p>
             <button
               type="button"
-              onClick={() => navigate('/new/manual')}
+              onClick={() => navigate('/new/manual', { state: { clubName: query.trim() } })}
               className="mt-3 inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-fairway-700 px-4 py-2.5 font-semibold text-white active:bg-fairway-800"
             >
               <PlusIcon className="h-5 w-5" aria-hidden />

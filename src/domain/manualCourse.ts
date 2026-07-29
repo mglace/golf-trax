@@ -64,10 +64,12 @@ export function validateManualCourse(input: ManualCourseInput): Record<string, s
   if (!(MANUAL_HOLE_COUNTS as readonly number[]).includes(input.holes.length)) {
     errors.holes = 'A course must have 9 or 18 holes.'
   } else {
+    // Par must be a whole number in range — a fractional par (e.g. 3.5) is
+    // finite and in-range but would corrupt par-total and vs-par math.
     const badPar = input.holes.some(
-      (h) => !Number.isFinite(h.par) || h.par < MIN_PAR || h.par > MAX_PAR,
+      (h) => !Number.isInteger(h.par) || h.par < MIN_PAR || h.par > MAX_PAR,
     )
-    if (badPar) errors.holes = `Every hole needs a par between ${MIN_PAR} and ${MAX_PAR}.`
+    if (badPar) errors.holes = `Every hole needs a whole-number par between ${MIN_PAR} and ${MAX_PAR}.`
   }
   return errors
 }
@@ -90,10 +92,10 @@ export function nextManualCourseId(existingIds: number[]): number {
 function sanitizeHole(h: ManualHoleInput, index: number): ApiHole {
   return {
     par: h.par,
-    // Handicap/yardage are optional niceties; coerce non-finite to safe values
-    // so the scorecard never sees NaN.
-    handicap: Number.isFinite(h.handicap) ? h.handicap : index + 1,
-    yardage: Number.isFinite(h.yardage) && h.yardage > 0 ? h.yardage : 0,
+    // Handicap/yardage are optional niceties; coerce to safe whole numbers so a
+    // non-finite or fractional value can never reach the scorecard.
+    handicap: Number.isFinite(h.handicap) ? Math.round(h.handicap) : index + 1,
+    yardage: Number.isFinite(h.yardage) && h.yardage > 0 ? Math.round(h.yardage) : 0,
   }
 }
 

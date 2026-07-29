@@ -40,11 +40,13 @@ describe('validateManualCourse', () => {
     expect(validateManualCourse(input({ holes: blankHoles(9) }))).toEqual({})
   })
 
-  it('rejects out-of-range or non-finite par', () => {
+  it('rejects out-of-range, non-finite, or fractional par', () => {
     const holes = blankHoles(9)
     holes[3].par = 9
     expect(validateManualCourse(input({ holes })).holes).toBeDefined()
     holes[3].par = NaN
+    expect(validateManualCourse(input({ holes })).holes).toBeDefined()
+    holes[3].par = 3.5 // fractional par would corrupt par-total / vs-par math
     expect(validateManualCourse(input({ holes })).holes).toBeDefined()
   })
 })
@@ -97,12 +99,15 @@ describe('buildManualCourse', () => {
     expect(buildHoles(tee, 'front9')).toHaveLength(9)
   })
 
-  it('coerces non-finite optional hole fields to safe values', () => {
+  it('coerces non-finite or fractional optional hole fields to safe whole numbers', () => {
     const holes = blankHoles(9)
     holes[0] = { par: 4, handicap: NaN, yardage: NaN }
+    holes[1] = { par: 4, handicap: 2.7, yardage: 315.6 }
     const course = buildManualCourse(input({ holes }), -1)
-    const hole = course.tees.male[0].holes[0]
-    expect(hole.handicap).toBe(1) // backfilled to hole number
-    expect(hole.yardage).toBe(0)
+    const [h0, h1] = course.tees.male[0].holes
+    expect(h0.handicap).toBe(1) // backfilled to hole number
+    expect(h0.yardage).toBe(0)
+    expect(h1.handicap).toBe(3) // rounded
+    expect(h1.yardage).toBe(316) // rounded
   })
 })

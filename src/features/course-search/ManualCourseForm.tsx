@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { ChevronLeftIcon, SpinnerIcon } from '@/components/icons'
 import { createManualCourse } from '@/db/coursesRepo'
 import {
@@ -18,7 +18,17 @@ import type { Gender } from '@/db/types'
  */
 export function ManualCourseForm() {
   const navigate = useNavigate()
-  const [form, setForm] = useState<ManualCourseInput>(blankManualCourse)
+  const location = useLocation()
+  // Prefill the club name from the search term when the user came from the
+  // no-results state, so they don't retype what they just searched.
+  const prefillClubName =
+    typeof (location.state as { clubName?: unknown } | null)?.clubName === 'string'
+      ? (location.state as { clubName: string }).clubName
+      : ''
+  const [form, setForm] = useState<ManualCourseInput>(() => ({
+    ...blankManualCourse(),
+    clubName: prefillClubName,
+  }))
   const [showErrors, setShowErrors] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -148,6 +158,7 @@ export function ManualCourseForm() {
                 <button
                   key={count}
                   type="button"
+                  aria-pressed={active}
                   onClick={() => setHoleCount(count)}
                   className={[
                     'rounded-xl border px-2 py-3 text-sm font-semibold shadow-sm transition-colors',
@@ -172,6 +183,7 @@ export function ManualCourseForm() {
                 <button
                   key={g}
                   type="button"
+                  aria-pressed={active}
                   onClick={() => set('gender', g)}
                   className={[
                     'rounded-xl border px-2 py-3 text-sm font-semibold shadow-sm transition-colors',
@@ -226,6 +238,7 @@ export function ManualCourseForm() {
                   aria-label={`Hole ${i + 1} par`}
                   type="number"
                   inputMode="numeric"
+                  step={1}
                   min={3}
                   max={7}
                   value={num(h.par)}
@@ -236,6 +249,7 @@ export function ManualCourseForm() {
                   aria-label={`Hole ${i + 1} handicap`}
                   type="number"
                   inputMode="numeric"
+                  step={1}
                   min={1}
                   max={form.holes.length}
                   value={num(h.handicap)}
@@ -246,6 +260,7 @@ export function ManualCourseForm() {
                   aria-label={`Hole ${i + 1} yardage`}
                   type="number"
                   inputMode="numeric"
+                  step={1}
                   min={0}
                   value={num(h.yardage)}
                   onChange={(e) => setHole(i, { yardage: parseNum(e.target.value) })}
