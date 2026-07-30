@@ -3,6 +3,7 @@ import { useCourseSearch } from './useCourseSearch'
 import { SearchBar } from './SearchBar'
 import { CourseCard } from './CourseCard'
 import { RecentlyPlayed } from './RecentlyPlayed'
+import { NearYou } from './NearYou'
 import { ApiErrorMessage } from '@/components/ApiErrorMessage'
 import { ChevronLeftIcon, PlusIcon, SearchIcon, WifiOffIcon } from '@/components/icons'
 import { useOnlineStatus } from '@/hooks/useOnlineStatus'
@@ -62,6 +63,7 @@ export function CourseSearchPage() {
 
         {status === 'idle' && query.trim().length < 2 && (
           <>
+            <NearYou onSelect={handleSelect} />
             <RecentlyPlayed onSelect={handleSelect} />
             <div className="mt-6 flex flex-col items-center gap-2 py-8 text-center text-slate-500">
               <SearchIcon className="h-8 w-8" aria-hidden />

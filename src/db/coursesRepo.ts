@@ -33,6 +33,11 @@ export async function getCachedCourse(id: number): Promise<CachedCourse | undefi
   return db.courses.get(id)
 }
 
+/** All cached courses (drives the "near you" proximity ranking). */
+export async function getAllCachedCourses(): Promise<CachedCourse[]> {
+  return db.courses.toArray()
+}
+
 /**
  * Create and cache a hand-entered course (Phase 2d). Assigns a negative id (one
  * below the most-negative existing id) so it never collides with GolfCourseAPI
