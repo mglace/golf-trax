@@ -30,6 +30,11 @@ export function NearYou({ onSelect }: NearYouProps) {
   // No Geolocation API at all → don't advertise the feature.
   if (status === 'unsupported') return null
 
+  // A re-request from the granted state: keep the current list on screen and
+  // just show that we're fetching a newer fix, rather than blanking out.
+  const isRefreshing = status === 'prompting' && coords !== null
+  const showLocated = status === 'granted' || isRefreshing
+
   return (
     <section aria-labelledby="nearby-heading" className="mt-2">
       <div className="mb-2 flex items-center justify-between">
@@ -39,11 +44,26 @@ export function NearYou({ onSelect }: NearYouProps) {
         {(status === 'idle' || status === 'denied' || status === 'error') && (
           <button
             type="button"
-            onClick={request}
+            onClick={() => request()}
             className="inline-flex items-center gap-1 text-sm font-semibold text-fairway-700 active:text-fairway-800"
           >
             <MapPinIcon className="h-4 w-4" aria-hidden />
             {status === 'idle' ? 'Use my location' : 'Try again'}
+          </button>
+        )}
+        {showLocated && (
+          <button
+            type="button"
+            onClick={() => request({ fresh: true })}
+            disabled={isRefreshing}
+            className="inline-flex items-center gap-1 text-sm font-semibold text-fairway-700 active:text-fairway-800 disabled:opacity-60"
+          >
+            {isRefreshing ? (
+              <SpinnerIcon className="h-4 w-4" aria-hidden />
+            ) : (
+              <MapPinIcon className="h-4 w-4" aria-hidden />
+            )}
+            {isRefreshing ? 'Updating…' : 'Update location'}
           </button>
         )}
       </div>
@@ -55,7 +75,7 @@ export function NearYou({ onSelect }: NearYouProps) {
           </p>
         )}
 
-        {status === 'prompting' && (
+        {status === 'prompting' && !isRefreshing && (
           <p className="flex items-center gap-2 text-sm text-slate-500">
             <SpinnerIcon className="h-4 w-4" aria-hidden />
             Getting your location…
@@ -72,13 +92,13 @@ export function NearYou({ onSelect }: NearYouProps) {
           <p className="text-sm text-slate-500">Couldn’t get your location. Please try again.</p>
         )}
 
-        {status === 'granted' && nearby.length === 0 && (
+        {showLocated && nearby.length === 0 && (
           <p className="text-sm text-slate-500">
             No nearby courses yet — search for a course and it’ll show up here next time you’re close.
           </p>
         )}
 
-        {status === 'granted' && nearby.length > 0 && (
+        {showLocated && nearby.length > 0 && (
           <ul className="space-y-2">
             {nearby.map(({ course, distanceMeters }) => (
               <li key={course.id}>

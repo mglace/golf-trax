@@ -11,7 +11,12 @@ export type GeoStatus = 'unsupported' | 'idle' | 'prompting' | 'granted' | 'deni
 export interface GeolocationState {
   status: GeoStatus
   coords: Coords | null
-  request: () => void
+  /**
+   * Read the user's location. Pass `{ fresh: true }` to force a brand-new fix
+   * (e.g. an explicit "update location" tap after the user has moved); the
+   * default reuses a cached fix up to 5 minutes old to stay fast on first read.
+   */
+  request: (opts?: { fresh?: boolean }) => void
 }
 
 const SUPPORTED = typeof navigator !== 'undefined' && 'geolocation' in navigator
@@ -20,7 +25,7 @@ export function useGeolocation(): GeolocationState {
   const [status, setStatus] = useState<GeoStatus>(SUPPORTED ? 'idle' : 'unsupported')
   const [coords, setCoords] = useState<Coords | null>(null)
 
-  const request = useCallback(() => {
+  const request = useCallback((opts?: { fresh?: boolean }) => {
     if (!SUPPORTED) {
       setStatus('unsupported')
       return
@@ -36,7 +41,8 @@ export function useGeolocation(): GeolocationState {
         // is a transient error the user can retry.
         setStatus(err.code === err.PERMISSION_DENIED ? 'denied' : 'error')
       },
-      { enableHighAccuracy: false, timeout: 10_000, maximumAge: 300_000 },
+      // A fresh request bypasses the cached fix so "update location" actually moves.
+      { enableHighAccuracy: false, timeout: 10_000, maximumAge: opts?.fresh ? 0 : 300_000 },
     )
   }, [])
 
