@@ -5,6 +5,7 @@ import { HomePage } from '@/features/home/HomePage'
 import { RoundsPage } from '@/features/history/RoundsPage'
 import { CourseSearchPage } from '@/features/course-search/CourseSearchPage'
 import { CourseSetupPage } from '@/features/course-search/CourseSetupPage'
+import { ManualCourseForm } from '@/features/course-search/ManualCourseForm'
 import { RoundEntryPage } from '@/features/round-entry/RoundEntryPage'
 import { RoundSummaryPage } from '@/features/round-summary/RoundSummaryPage'
 import { SettingsPage } from '@/features/settings/SettingsPage'
@@ -28,6 +29,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <HomePage /> },
       { path: 'new', element: <CourseSearchPage /> },
+      { path: 'new/manual', element: <ManualCourseForm /> },
       { path: 'new/:courseId', element: <CourseSetupPage /> },
       { path: 'rounds', element: <RoundsPage /> },
       { path: 'settings', element: <SettingsPage /> },

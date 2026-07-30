@@ -32,7 +32,14 @@ export function RecentlyPlayed({ onSelect }: RecentlyPlayedProps) {
             <p className="truncate text-sm font-semibold text-slate-900">
               {formatCourseName(course)}
             </p>
-            <p className="mt-0.5 truncate text-xs text-slate-500">{formatLocation(course)}</p>
+            <p className="mt-0.5 truncate text-xs text-slate-500">
+              {formatLocation(course) || (course.isManual ? 'Added manually' : '')}
+            </p>
+            {course.isManual && (
+              <span className="mt-1 inline-block rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                Manual
+              </span>
+            )}
           </button>
         ))}
       </div>
