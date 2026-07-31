@@ -8,6 +8,11 @@ dist
 dist-ssr
 *.local
 
+# TypeScript incremental build caches. Machine- and OS-specific: tsc writes
+# canonical (lowercased) paths on case-insensitive filesystems, so a Windows build
+# rewrites every entry a macOS/Linux build produced, and vice versa.
+*.tsbuildinfo
+
 # Env — never commit real API keys
 .env
 .env.local
