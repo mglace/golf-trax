@@ -14,17 +14,40 @@ import {
   type ManualCourseInput,
 } from '@/domain/manualCourse'
 
-/** Insert/refresh a course from an API response, preserving prior play metadata. */
-export async function cacheCourse(course: ApiCourse): Promise<void> {
+/**
+ * A cached record is "complete" when it carries the full detail (tee boxes), was
+ * hydrated from the detail endpoint (so it's complete even if legitimately
+ * tee-less), or is a local manual course (negative id). Lean `/v1/search`
+ * results are not complete.
+ */
+export function isCachedCourseComplete(course: CachedCourse): boolean {
+  return course.hydrated === true || hasTeeData(course) || course.id < 0
+}
+
+/**
+ * Insert/refresh a course from an API response, preserving prior play metadata.
+ * Pass `{ hydrated: true }` when `course` came from the `/v1/courses/{id}` detail
+ * endpoint so the record is marked complete even if it has no tee boxes.
+ */
+export async function cacheCourse(
+  course: ApiCourse,
+  opts?: { hydrated?: boolean },
+): Promise<void> {
   const existing = await db.courses.get(course.id)
   const now = new Date().toISOString()
+  const hydrated = opts?.hydrated === true
+  const incomingComplete = hydrated || hasTeeData(course) || course.id < 0
   // Never let a lean `/v1/search` result downgrade a complete cached record: if
   // we already hold the full course (tee boxes + coordinates from the detail
   // endpoint) and the incoming one is lean, keep the richer data. A subsequent
   // search must not strip the coordinates that "near you" relies on.
-  const base = existing && hasTeeData(existing) && !hasTeeData(course) ? existing : course
+  if (existing && isCachedCourseComplete(existing) && !incomingComplete) {
+    await db.courses.put({ ...existing, cachedAt: now })
+    return
+  }
   const record: CachedCourse = {
-    ...base,
+    ...course,
+    hydrated: hydrated || undefined,
     lastPlayedDate: existing?.lastPlayedDate,
     cachedAt: now,
   }
@@ -33,7 +56,7 @@ export async function cacheCourse(course: ApiCourse): Promise<void> {
 
 /** Cache many courses at once (e.g. a page of search results). */
 export async function cacheCourses(courses: ApiCourse[]): Promise<void> {
-  await Promise.all(courses.map(cacheCourse))
+  await Promise.all(courses.map((course) => cacheCourse(course)))
 }
 
 /**
@@ -52,7 +75,7 @@ export async function cacheFullCourse(
   if (course.id > 0 && !hasTeeData(course)) {
     try {
       const full = await getCourseById(course.id, signal)
-      await cacheCourse(full)
+      await cacheCourse(full, { hydrated: true })
       return full
     } catch {
       // Offline / detail fetch failed — cache the lean result rather than losing it.
