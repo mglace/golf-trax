@@ -41,11 +41,39 @@ export async function resolveCourse(id: number, signal?: AbortSignal): Promise<A
 }
 
 /**
+ * The already-resolved course from the selection flow, but only when it actually
+ * describes the id being loaded. Guards against a stale navigation-state course
+ * (e.g. from the browser back/forward cache) being shown for a different course.
+ */
+export function seedCourse(
+  id: number | undefined,
+  initialCourse: ApiCourse | undefined,
+): ApiCourse | undefined {
+  if (id === undefined || Number.isNaN(id)) return undefined
+  return initialCourse && initialCourse.id === id ? initialCourse : undefined
+}
+
+/**
  * Load a single course by id for the setup screen. Wraps {@link resolveCourse}
  * with React state, cancellation, and a retry.
+ *
+ * `initialCourse` is the already-resolved course handed over from the selection
+ * flow (via router navigation state). When it's present and matches `id`, it's
+ * rendered directly — no cache read-back or detail re-fetch — which is what
+ * keeps on-course selection from dead-ending at "We couldn't find that course"
+ * when the by-id resolution can't find the course again. A manual retry still
+ * forces a fresh {@link resolveCourse}.
  */
-export function useCourse(id: number | undefined): LoadState & { retry: () => void } {
-  const [state, setState] = useState<LoadState>({ status: 'loading', course: null, error: null })
+export function useCourse(
+  id: number | undefined,
+  initialCourse?: ApiCourse,
+): LoadState & { retry: () => void } {
+  const seed = seedCourse(id, initialCourse)
+  const [state, setState] = useState<LoadState>(() =>
+    seed
+      ? { status: 'success', course: seed, error: null }
+      : { status: 'loading', course: null, error: null },
+  )
   const [retryTick, setRetryTick] = useState(0)
 
   useEffect(() => {
@@ -55,6 +83,13 @@ export function useCourse(id: number | undefined): LoadState & { retry: () => vo
         course: null,
         error: new ApiError('not-found', 'Invalid course id.'),
       })
+      return
+    }
+
+    // Selection handed us the resolved course — render it as-is (a manual retry
+    // clears this by bumping retryTick, falling through to a fresh resolve).
+    if (retryTick === 0 && seed) {
+      setState({ status: 'success', course: seed, error: null })
       return
     }
 
@@ -80,7 +115,7 @@ export function useCourse(id: number | undefined): LoadState & { retry: () => vo
       cancelled = true
       controller.abort()
     }
-  }, [id, retryTick])
+  }, [id, retryTick, seed])
 
   return { ...state, retry: () => setRetryTick((n) => n + 1) }
 }
