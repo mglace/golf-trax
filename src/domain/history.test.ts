@@ -14,7 +14,7 @@ function isoDaysAgo(days: number): string {
 function round(dateISO: string, id = dateISO): Round {
   return {
     id,
-    courseId: 1,
+    courseId: '1',
     courseName: 'Test',
     clubName: 'Test',
     gender: 'male',

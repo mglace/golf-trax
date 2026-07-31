@@ -115,7 +115,7 @@ export function sortCoursesByDistance<T extends ApiCourse>(
  */
 export function withKnownCoords<T extends ApiCourse>(
   courses: T[],
-  coordsById: Map<number, Coords>,
+  coordsById: Map<string, Coords>,
 ): T[] {
   return courses.map((course) => {
     if (courseCoords(course)) return course

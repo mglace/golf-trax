@@ -121,7 +121,7 @@ function installFetch(srv: FakeServer) {
 function round(overrides: Partial<Round> = {}): Round {
   return {
     id: 'r1',
-    courseId: 1,
+    courseId: '1',
     courseName: 'Pine Ridge',
     clubName: 'Pine Ridge GC',
     gender: 'male',

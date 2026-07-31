@@ -62,7 +62,16 @@ function validateRound(v) {
   } = v
 
   if (typeof id !== 'string' || id === '') return null
-  if (typeof courseId !== 'number' || !Number.isFinite(courseId)) return null
+  // courseId is an opaque string. Tolerate a legacy finite number from clients
+  // that predate the string-id change by coercing it, so their pushes aren't
+  // rejected and quarantined. Kept in lockstep with the SPA (src/domain/backup.js).
+  const courseIdStr =
+    typeof courseId === 'string' && courseId !== ''
+      ? courseId
+      : typeof courseId === 'number' && Number.isFinite(courseId)
+        ? String(courseId)
+        : null
+  if (courseIdStr === null) return null
   if (typeof courseName !== 'string') return null
   if (typeof clubName !== 'string') return null
   if (gender !== 'male' && gender !== 'female') return null
@@ -81,7 +90,7 @@ function validateRound(v) {
 
   const round = {
     id,
-    courseId,
+    courseId: courseIdStr,
     courseName,
     clubName,
     gender,

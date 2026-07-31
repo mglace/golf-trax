@@ -18,7 +18,10 @@ export function CourseSetupPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const { courseId } = useParams<{ courseId: string }>()
-  const id = courseId ? Number(courseId) : undefined
+  // Course ids are opaque strings (e.g. "yasc0cpx"); use the param as-is. NEVER
+  // Number() it — that yields NaN for a real id and dead-ends setup at "We
+  // couldn't find that course".
+  const id = courseId || undefined
   // The selection flow passes the course it just fetched+cached (tees included)
   // so we can render it directly instead of re-resolving it by id. A plain
   // deep-link carries no navigation state and resolves from cache/API; a refresh

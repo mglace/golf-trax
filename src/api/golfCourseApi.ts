@@ -102,24 +102,43 @@ export async function searchCourses(query: string, signal?: AbortSignal): Promis
     ? `${DIRECT_BASE}/v1/search?${params.toString()}`
     : `/api/search?${params.toString()}`
   const data = await getJson<SearchResponse>(url, signal)
-  return data.courses ?? []
+  // Normalize ids to strings so a numeric id can never flow through the
+  // string-typed `id` field and mismatch a cache key or the route param.
+  return (data.courses ?? []).map(normalizeCourse).filter((c): c is ApiCourse => c !== null)
 }
 
 /**
- * Fetch a single course by its numeric API id. Unlike `/v1/search` (which wraps
- * its results in `{ courses: [...] }`), the detail endpoint wraps the course in
- * `{ course: {...} }`. Unwrap it defensively — accept a bare course too — so the
- * caller always gets a real {@link ApiCourse} rather than the envelope (whose
- * `id`/`tees` would be `undefined`).
+ * Coerce a raw course to a well-formed {@link ApiCourse} with a non-empty STRING
+ * id, or null if it can't be one. Ids arrive opaque (alphanumeric slugs); a
+ * numeric id is tolerated and stringified so downstream cache keys / routing
+ * stay consistent. Guards error-shaped bodies (`{ course: null }`, `{ error }`)
+ * from being cast to a course with an undefined id.
  */
-export async function getCourseById(id: number, signal?: AbortSignal): Promise<ApiCourse> {
-  const url = DIRECT_MODE ? `${DIRECT_BASE}/v1/courses/${id}` : `/api/courses/${id}`
+function normalizeCourse(raw: unknown): ApiCourse | null {
+  if (!raw || typeof raw !== 'object') return null
+  const rawId = (raw as { id?: unknown }).id
+  const id =
+    typeof rawId === 'string' && rawId !== ''
+      ? rawId
+      : typeof rawId === 'number' && Number.isFinite(rawId)
+        ? String(rawId)
+        : null
+  if (id === null) return null
+  return { ...(raw as ApiCourse), id }
+}
+
+/**
+ * Fetch a single course by its opaque id. Unlike `/v1/search` (which wraps its
+ * results in `{ courses: [...] }`), the detail endpoint wraps the course in
+ * `{ course: {...} }`. Unwrap it defensively — accept a bare course too — and
+ * normalize the id to a string so the caller always gets a real {@link ApiCourse}.
+ */
+export async function getCourseById(id: string, signal?: AbortSignal): Promise<ApiCourse> {
+  const encoded = encodeURIComponent(id)
+  const url = DIRECT_MODE ? `${DIRECT_BASE}/v1/courses/${encoded}` : `/api/courses/${encoded}`
   const data = await getJson<{ course?: ApiCourse } & Partial<ApiCourse>>(url, signal)
-  const course = data.course ?? (data as ApiCourse)
-  // A well-formed course always has a numeric id. Guard against a `{ course: null }`
-  // or otherwise error-shaped 200 body being cast to a course with undefined
-  // id/tees (which would poison the cache and break setup).
-  if (!course || typeof course.id !== 'number') {
+  const course = normalizeCourse(data.course ?? data)
+  if (!course) {
     throw new ApiError('unknown', `${SERVICE} returned an unexpected course response.`)
   }
   return course

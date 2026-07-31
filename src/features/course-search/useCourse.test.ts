@@ -6,7 +6,7 @@ import { db } from '@/db/db'
 import type { ApiCourse } from '@/api/types'
 
 const leanCourse: ApiCourse = {
-  id: 34,
+  id: '34',
   club_name: 'Lubbock Country Club',
   course_name: 'Lubbock Country Club',
   location: { address: '124 Golf Course Lane', city: '', state: '', country: '' },
@@ -55,7 +55,7 @@ describe('resolveCourse', () => {
     await cacheCourse(fullCourse)
     const fetchSpy = vi.fn()
     vi.stubGlobal('fetch', fetchSpy)
-    const result = await resolveCourse(34)
+    const result = await resolveCourse('34')
     expect(result.tees.male).toHaveLength(1)
     expect(fetchSpy).not.toHaveBeenCalled()
   })
@@ -63,40 +63,40 @@ describe('resolveCourse', () => {
   it('enriches a lean cached course via the detail endpoint and caches it (hydrated)', async () => {
     await cacheCourse(leanCourse)
     stubFetch(() => ({ status: 200, body: { course: fullCourse } }))
-    const result = await resolveCourse(34)
+    const result = await resolveCourse('34')
     expect(result.tees.male).toHaveLength(1)
     expect(result.location.latitude).toBe(33.5779)
-    const cached = await getCachedCourse(34)
+    const cached = await getCachedCourse('34')
     expect(cached?.hydrated).toBe(true)
     expect(cached?.tees.male).toHaveLength(1)
   })
 
   it('fetches when the course is not cached at all (deep-link)', async () => {
     stubFetch(() => ({ status: 200, body: { course: fullCourse } }))
-    const result = await resolveCourse(34)
-    expect(result.id).toBe(34)
+    const result = await resolveCourse('34')
+    expect(result.id).toBe('34')
     expect(result.tees.male).toHaveLength(1)
   })
 
   it('falls back to the lean cached copy when the detail fetch fails (offline)', async () => {
     await cacheCourse(leanCourse)
     stubFetch(() => ({ status: 500, body: { error: 'down' } }))
-    const result = await resolveCourse(34)
-    expect(result.id).toBe(34)
+    const result = await resolveCourse('34')
+    expect(result.id).toBe('34')
     expect(result.tees.male).toHaveLength(0) // lean copy, no hard error
   })
 
   it('rejects when nothing is cached and the fetch fails', async () => {
     stubFetch(() => ({ status: 500, body: { error: 'down' } }))
-    await expect(resolveCourse(34)).rejects.toBeTruthy()
+    await expect(resolveCourse('34')).rejects.toBeTruthy()
   })
 
   it('does not re-fetch a hydrated but tee-less course', async () => {
     await cacheCourse({ ...leanCourse }, { hydrated: true })
     const fetchSpy = vi.fn()
     vi.stubGlobal('fetch', fetchSpy)
-    const result = await resolveCourse(34)
-    expect(result.id).toBe(34)
+    const result = await resolveCourse('34')
+    expect(result.id).toBe('34')
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 })
@@ -105,31 +105,31 @@ describe('seedCourse (selection-flow passthrough)', () => {
   it('returns a complete course when it matches the requested id', () => {
     // The setup screen renders this directly — no by-id cache read-back or
     // detail re-fetch — so selection can never dead-end at "not found".
-    expect(seedCourse(34, fullCourse)).toBe(fullCourse)
+    expect(seedCourse('34', fullCourse)).toBe(fullCourse)
   })
 
-  it('accepts a local manual course (negative id, complete by construction)', () => {
-    const manual: ApiCourse = { ...fullCourse, id: -1 }
-    expect(seedCourse(-1, manual)).toBe(manual)
+  it('accepts a local manual course (manual id)', () => {
+    const manual: ApiCourse = { ...fullCourse, id: 'manual-1' }
+    expect(seedCourse('manual-1', manual)).toBe(manual)
   })
 
   it('rejects a lean course with no tee data so setup re-resolves by id', () => {
     // cacheFullCourse returns the lean search result when the detail fetch
     // failed; seeding it would strand setup on the "no tee data" message
     // instead of letting resolveCourse re-attempt the detail fetch.
-    expect(seedCourse(34, leanCourse)).toBeUndefined()
+    expect(seedCourse('34', leanCourse)).toBeUndefined()
   })
 
   it('ignores a course whose id does not match (stale navigation state)', () => {
-    expect(seedCourse(99, fullCourse)).toBeUndefined()
+    expect(seedCourse('99', fullCourse)).toBeUndefined()
   })
 
   it('returns undefined when no course was handed over', () => {
-    expect(seedCourse(34, undefined)).toBeUndefined()
+    expect(seedCourse('34', undefined)).toBeUndefined()
   })
 
   it('returns undefined for an invalid id even if a course is present', () => {
     expect(seedCourse(undefined, fullCourse)).toBeUndefined()
-    expect(seedCourse(Number('x'), fullCourse)).toBeUndefined()
+    expect(seedCourse('', fullCourse)).toBeUndefined()
   })
 })

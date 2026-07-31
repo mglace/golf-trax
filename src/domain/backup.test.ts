@@ -13,7 +13,7 @@ import type { CachedCourse, Round } from '@/db/types'
 function round(overrides: Partial<Round> = {}): Round {
   return {
     id: 'r1',
-    courseId: 1,
+    courseId: '1',
     courseName: 'Pine Ridge',
     clubName: 'Pine Ridge GC',
     gender: 'male',
@@ -31,7 +31,7 @@ function course(overrides: Partial<CachedCourse> = {}): CachedCourse {
   return {
     // ApiCourse fields are spread through; only the ones the app relies on
     // are asserted here, so a minimal shape is fine for the round-trip test.
-    id: 1,
+    id: '1',
     club_name: 'Pine Ridge GC',
     cachedAt: '2026-07-01T12:00:00.000Z',
     ...overrides,
@@ -60,7 +60,7 @@ describe('parseBackup round-trip', () => {
     const { backup, skipped } = parseBackup(text)
     expect(skipped).toEqual({ courses: 0, rounds: 0 })
     expect(backup.data.rounds[0].id).toBe('r1')
-    expect(backup.data.courses[0].id).toBe(1)
+    expect(backup.data.courses[0].id).toBe('1')
     expect(backup.data.profile?.name).toBe('Matt')
   })
 })
@@ -108,6 +108,26 @@ describe('parseBackup validation', () => {
     expect(backup.data.rounds).toHaveLength(1)
     expect(backup.data.courses).toHaveLength(1)
     expect(skipped).toEqual({ courses: 1, rounds: 2 })
+  })
+
+  it('coerces legacy numeric ids (older exports) to strings instead of dropping them', () => {
+    // Backups exported before ids became strings hold manual courses under a
+    // negative NUMBER id, and rounds referencing them by that number. Import
+    // must keep them, coercing the ids — not skip them as malformed.
+    const text = JSON.stringify({
+      app: BACKUP_APP,
+      schemaVersion: 1,
+      exportedAt: '2026-07-28T00:00:00.000Z',
+      data: {
+        rounds: [round({ courseId: -1 as unknown as string })],
+        courses: [course({ id: -1 as unknown as string })],
+        profile: null,
+      },
+    })
+    const { backup, skipped } = parseBackup(text)
+    expect(skipped).toEqual({ courses: 0, rounds: 0 })
+    expect(backup.data.rounds[0].courseId).toBe('-1')
+    expect(backup.data.courses[0].id).toBe('-1')
   })
 
   it('backfills updatedAt from date for older round exports', () => {

@@ -61,7 +61,7 @@ export interface HoleEntry {
 
 export interface Round {
   id: string
-  courseId: number
+  courseId: string
   /** Denormalized for history display without a course lookup. */
   courseName: string
   clubName: string

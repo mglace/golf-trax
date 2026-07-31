@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { getCachedCourse, cacheCourse, isCachedCourseComplete } from '@/db/coursesRepo'
 import { getCourseById, ApiError } from '@/api/golfCourseApi'
 import { hasTeeData } from '@/domain/course'
+import { isManualCourseId } from '@/domain/manualCourse'
 import type { ApiCourse } from '@/api/types'
 
 type LoadState =
@@ -21,7 +22,7 @@ type LoadState =
  * Kept as a plain async function (no React) so the cache/fetch/fallback logic is
  * unit-testable in isolation.
  */
-export async function resolveCourse(id: number, signal?: AbortSignal): Promise<ApiCourse> {
+export async function resolveCourse(id: string, signal?: AbortSignal): Promise<ApiCourse> {
   const cached = await getCachedCourse(id)
   if (cached && isCachedCourseComplete(cached)) return cached
   try {
@@ -53,13 +54,13 @@ export async function resolveCourse(id: number, signal?: AbortSignal): Promise<A
  * the detail fetch and falls back to the cached copy.
  */
 export function seedCourse(
-  id: number | undefined,
+  id: string | undefined,
   initialCourse: ApiCourse | undefined,
 ): ApiCourse | undefined {
-  if (id === undefined || Number.isNaN(id)) return undefined
+  if (!id) return undefined
   if (!initialCourse || initialCourse.id !== id) return undefined
-  // Complete === has tee data, or a local manual course (negative id).
-  if (!hasTeeData(initialCourse) && !(initialCourse.id < 0)) return undefined
+  // Complete === has tee data, or a local manual course.
+  if (!hasTeeData(initialCourse) && !isManualCourseId(initialCourse.id)) return undefined
   return initialCourse
 }
 
@@ -76,7 +77,7 @@ export function seedCourse(
  * by id from cache/API.
  */
 export function useCourse(
-  id: number | undefined,
+  id: string | undefined,
   initialCourse?: ApiCourse,
 ): LoadState & { retry: () => void } {
   const seed = seedCourse(id, initialCourse)
@@ -88,7 +89,7 @@ export function useCourse(
   const [retryTick, setRetryTick] = useState(0)
 
   useEffect(() => {
-    if (id === undefined || Number.isNaN(id)) {
+    if (!id) {
       setState({
         status: 'error',
         course: null,

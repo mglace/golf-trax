@@ -7,7 +7,7 @@ import type { ApiCourse } from '../../src/api/types'
  * Enough fields for the search cards to render name + location.
  */
 export const PEBBLE_BEACH: ApiCourse = {
-  id: 101,
+  id: '101',
   club_name: 'Pebble Beach Golf Links',
   course_name: 'Pebble Beach',
   location: { address: '', city: 'Pebble Beach', state: 'CA', country: 'United States' },
@@ -15,7 +15,7 @@ export const PEBBLE_BEACH: ApiCourse = {
 }
 
 export const SPYGLASS_HILL: ApiCourse = {
-  id: 102,
+  id: '102',
   club_name: 'Spyglass Hill Golf Course',
   course_name: 'Spyglass Hill',
   location: { address: '', city: 'Pebble Beach', state: 'CA', country: 'United States' },
