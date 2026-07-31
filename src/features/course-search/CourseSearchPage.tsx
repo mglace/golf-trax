@@ -1,13 +1,23 @@
+import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCourseSearch } from './useCourseSearch'
+import { useGeolocation } from './useGeolocation'
 import { SearchBar } from './SearchBar'
 import { CourseCard } from './CourseCard'
 import { RecentlyPlayed } from './RecentlyPlayed'
 import { NearYou } from './NearYou'
 import { ApiErrorMessage } from '@/components/ApiErrorMessage'
-import { ChevronLeftIcon, PlusIcon, SearchIcon, WifiOffIcon } from '@/components/icons'
+import {
+  ChevronLeftIcon,
+  MapPinIcon,
+  PlusIcon,
+  SearchIcon,
+  SpinnerIcon,
+  WifiOffIcon,
+} from '@/components/icons'
 import { useOnlineStatus } from '@/hooks/useOnlineStatus'
 import { cacheCourse } from '@/db/coursesRepo'
+import { sortCoursesByDistance, type RankedCourse } from '@/domain/geo'
 import type { ApiCourse } from '@/api/types'
 
 /**
@@ -19,6 +29,8 @@ export function CourseSearchPage() {
   const navigate = useNavigate()
   const online = useOnlineStatus()
   const { query, setQuery, status, results, error, retry } = useCourseSearch()
+  // Shared across "Near you" and search results so the user only grants location once.
+  const geo = useGeolocation()
 
   async function handleSelect(course: ApiCourse) {
     // Ensure the chosen course is cached before we route to the setup screen,
@@ -28,6 +40,13 @@ export function CourseSearchPage() {
   }
 
   const showEmpty = status === 'success' && results.length === 0
+
+  // When the user has shared their location, rank results nearest-first; courses
+  // with no usable coordinates ((0,0) or missing) sink to the bottom in API order.
+  const rankedResults = useMemo<RankedCourse[]>(() => {
+    if (geo.coords) return sortCoursesByDistance(results, geo.coords)
+    return results.map((course) => ({ course, distanceMeters: null }))
+  }, [results, geo.coords])
 
   return (
     <div className="py-4">
@@ -63,7 +82,7 @@ export function CourseSearchPage() {
 
         {status === 'idle' && query.trim().length < 2 && (
           <>
-            <NearYou onSelect={handleSelect} />
+            <NearYou geo={geo} onSelect={handleSelect} />
             <RecentlyPlayed onSelect={handleSelect} />
             <div className="mt-6 flex flex-col items-center gap-2 py-8 text-center text-slate-500">
               <SearchIcon className="h-8 w-8" aria-hidden />
@@ -95,13 +114,52 @@ export function CourseSearchPage() {
         )}
 
         {status === 'success' && results.length > 0 && (
-          <ul className="space-y-2">
-            {results.map((course) => (
-              <li key={course.id}>
-                <CourseCard course={course} onSelect={handleSelect} />
-              </li>
-            ))}
-          </ul>
+          <>
+            {geo.status !== 'unsupported' && (
+              <div className="flex items-center justify-between px-1">
+                <p className="text-xs text-slate-500">
+                  {geo.coords
+                    ? 'Sorted by distance'
+                    : `${results.length} ${results.length === 1 ? 'result' : 'results'}`}
+                </p>
+                {!geo.coords && (
+                  <button
+                    type="button"
+                    onClick={() => geo.request()}
+                    disabled={geo.status === 'prompting'}
+                    className="inline-flex items-center gap-1 text-sm font-semibold text-fairway-700 active:text-fairway-800 disabled:opacity-60"
+                  >
+                    {geo.status === 'prompting' ? (
+                      <SpinnerIcon className="h-4 w-4" aria-hidden />
+                    ) : (
+                      <MapPinIcon className="h-4 w-4" aria-hidden />
+                    )}
+                    {geo.status === 'prompting'
+                      ? 'Locating…'
+                      : geo.status === 'idle'
+                        ? 'Sort by distance'
+                        : 'Try again'}
+                  </button>
+                )}
+              </div>
+            )}
+            {geo.status === 'denied' && !geo.coords && (
+              <p className="px-1 text-xs text-slate-500">
+                Location access is blocked. Allow it in your browser settings to sort by distance.
+              </p>
+            )}
+            <ul className="space-y-2">
+              {rankedResults.map(({ course, distanceMeters }) => (
+                <li key={course.id}>
+                  <CourseCard
+                    course={course}
+                    onSelect={handleSelect}
+                    distanceMeters={distanceMeters}
+                  />
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </div>
     </div>

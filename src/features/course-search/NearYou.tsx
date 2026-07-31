@@ -4,10 +4,12 @@ import { getAllCachedCourses } from '@/db/coursesRepo'
 import { nearbyCourses, formatMiles } from '@/domain/geo'
 import { formatCourseName, formatLocation } from '@/domain/course'
 import { MapPinIcon, SpinnerIcon } from '@/components/icons'
-import { useGeolocation } from './useGeolocation'
+import type { GeolocationState } from './useGeolocation'
 import type { ApiCourse } from '@/api/types'
 
 interface NearYouProps {
+  /** Shared geolocation state, lifted so search results reuse the same fix/permission. */
+  geo: GeolocationState
   onSelect: (course: ApiCourse) => void
 }
 
@@ -18,8 +20,8 @@ interface NearYouProps {
  * courses you've already looked up; discovering brand-new courses by location
  * would need a geo-search endpoint (a future addition).
  */
-export function NearYou({ onSelect }: NearYouProps) {
-  const { status, coords, request } = useGeolocation()
+export function NearYou({ geo, onSelect }: NearYouProps) {
+  const { status, coords, request } = geo
   const courses = useLiveQuery(() => getAllCachedCourses(), [], [])
 
   const nearby = useMemo(
