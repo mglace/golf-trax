@@ -94,6 +94,22 @@ describe('cacheFullCourse', () => {
     expect(isCachedCourseComplete(cached as CachedCourse)).toBe(true)
   })
 
+  it('returns and caches under the detail endpoint id when it differs from the search id', async () => {
+    // GolfCourseAPI can canonicalize a lean /v1/search result to a DIFFERENT
+    // course id in the detail endpoint (merged/aliased records). The full record
+    // must be cached — and returned — under that canonical id, so the caller can
+    // route to a course that actually exists in the cache. Routing to the stale
+    // search id instead would 404 on the setup screen ("We couldn't find that
+    // course").
+    const canonical: ApiCourse = { ...fullCourse, id: 9999 }
+    stubFetch({ course: canonical })
+    const result = await cacheFullCourse(leanCourse) // leanCourse.id === 34
+    expect(result.id).toBe(9999)
+    expect((await getCachedCourse(9999))?.tees.male).toHaveLength(1)
+    // Nothing is cached under the stale search id, so the caller must not route there.
+    expect(await getCachedCourse(34)).toBeUndefined()
+  })
+
   it('falls back to caching the lean result when the detail fetch fails', async () => {
     stubFetch({ error: 'boom' }, 500)
     const result = await cacheFullCourse(leanCourse)

@@ -59,9 +59,13 @@ export function CourseSearchPage() {
     // results are lean (no tee boxes, no coordinates), so this fetches the full
     // detail record — giving the setup screen its tees and "near you" the
     // coordinates it needs — and works from IndexedDB even if the network drops.
-    await cacheFullCourse(course, controller.signal)
+    // Route to the id of the course we actually cached, NOT the search result's
+    // id: the detail endpoint can canonicalize a lean result to a different
+    // course id (merged/aliased records), and routing to the stale search id
+    // would find nothing cached and 404 on setup ("We couldn't find that course").
+    const cached = await cacheFullCourse(course, controller.signal)
     if (controller.signal.aborted) return
-    navigate(`/new/${course.id}`)
+    navigate(`/new/${cached.id}`)
   }
 
   const showEmpty = status === 'success' && results.length === 0
