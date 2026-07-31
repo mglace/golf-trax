@@ -105,8 +105,22 @@ export async function searchCourses(query: string, signal?: AbortSignal): Promis
   return data.courses ?? []
 }
 
-/** Fetch a single course by its numeric API id. */
+/**
+ * Fetch a single course by its numeric API id. Unlike `/v1/search` (which wraps
+ * its results in `{ courses: [...] }`), the detail endpoint wraps the course in
+ * `{ course: {...} }`. Unwrap it defensively — accept a bare course too — so the
+ * caller always gets a real {@link ApiCourse} rather than the envelope (whose
+ * `id`/`tees` would be `undefined`).
+ */
 export async function getCourseById(id: number, signal?: AbortSignal): Promise<ApiCourse> {
   const url = DIRECT_MODE ? `${DIRECT_BASE}/v1/courses/${id}` : `/api/courses/${id}`
-  return getJson<ApiCourse>(url, signal)
+  const data = await getJson<{ course?: ApiCourse } & Partial<ApiCourse>>(url, signal)
+  const course = data.course ?? (data as ApiCourse)
+  // A well-formed course always has a numeric id. Guard against a `{ course: null }`
+  // or otherwise error-shaped 200 body being cast to a course with undefined
+  // id/tees (which would poison the cache and break setup).
+  if (!course || typeof course.id !== 'number') {
+    throw new ApiError('unknown', `${SERVICE} returned an unexpected course response.`)
+  }
+  return course
 }

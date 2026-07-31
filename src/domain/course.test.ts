@@ -5,6 +5,7 @@ import {
   formatLocation,
   formatCourseName,
   courseSummary,
+  hasTeeData,
 } from './course'
 import type { ApiCourse, ApiTeeBox } from '@/api/types'
 
@@ -102,5 +103,19 @@ describe('courseSummary', () => {
 
   it('returns null when no tees exist', () => {
     expect(courseSummary(course({ tees: { male: [], female: [] } }))).toBeNull()
+  })
+})
+
+describe('hasTeeData', () => {
+  it('is true when a male or female tee box exists', () => {
+    expect(hasTeeData(course())).toBe(true)
+    expect(hasTeeData(course({ tees: { male: [tee('Blue')], female: [] } }))).toBe(true)
+    expect(hasTeeData(course({ tees: { male: [], female: [tee('Red')] } }))).toBe(true)
+  })
+
+  it('is false for a lean search result with no tees', () => {
+    expect(hasTeeData(course({ tees: { male: [], female: [] } }))).toBe(false)
+    // Tolerates a missing/partial `tees` object (lean search shape).
+    expect(hasTeeData(course({ tees: undefined as never }))).toBe(false)
   })
 })

@@ -26,6 +26,13 @@ export interface CachedCourse extends ApiCourse {
    * with API ids, and are badged in the UI. Local-only bookkeeping.
    */
   isManual?: boolean
+  /**
+   * True once this record has been populated from the `/v1/courses/{id}` detail
+   * endpoint (tees + coordinates), as opposed to a lean `/v1/search` result.
+   * Marks a course "complete" even when the detail record legitimately has no
+   * tee boxes, so we don't re-fetch it on every open. Local-only bookkeeping.
+   */
+  hydrated?: boolean
 }
 
 /**

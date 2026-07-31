@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCourseSearch } from './useCourseSearch'
 import { SearchBar } from './SearchBar'
@@ -7,7 +8,7 @@ import { NearYou } from './NearYou'
 import { ApiErrorMessage } from '@/components/ApiErrorMessage'
 import { ChevronLeftIcon, PlusIcon, SearchIcon, WifiOffIcon } from '@/components/icons'
 import { useOnlineStatus } from '@/hooks/useOnlineStatus'
-import { cacheCourse } from '@/db/coursesRepo'
+import { cacheFullCourse } from '@/db/coursesRepo'
 import type { ApiCourse } from '@/api/types'
 
 /**
@@ -20,10 +21,26 @@ export function CourseSearchPage() {
   const online = useOnlineStatus()
   const { query, setQuery, status, results, error, retry } = useCourseSearch()
 
+  // The id currently being enriched+cached before we route to setup. Fetching
+  // the full course is a network round-trip, so we surface a spinner on the
+  // tapped card and block further taps until it resolves.
+  const [pendingId, setPendingId] = useState<number | null>(null)
+  const selectAbort = useRef<AbortController | null>(null)
+  // Cancel an in-flight selection if the user navigates away first.
+  useEffect(() => () => selectAbort.current?.abort(), [])
+
   async function handleSelect(course: ApiCourse) {
-    // Ensure the chosen course is cached before we route to the setup screen,
-    // so that screen can read it from IndexedDB even if the network drops.
-    await cacheCourse(course)
+    if (pendingId !== null) return // re-entrancy guard: one selection at a time
+    setPendingId(course.id)
+    selectAbort.current?.abort()
+    const controller = new AbortController()
+    selectAbort.current = controller
+    // Ensure the COMPLETE course is cached before routing to setup. Search
+    // results are lean (no tee boxes, no coordinates), so this fetches the full
+    // detail record — giving the setup screen its tees and "near you" the
+    // coordinates it needs — and works from IndexedDB even if the network drops.
+    await cacheFullCourse(course, controller.signal)
+    if (controller.signal.aborted) return
     navigate(`/new/${course.id}`)
   }
 
@@ -98,7 +115,12 @@ export function CourseSearchPage() {
           <ul className="space-y-2">
             {results.map((course) => (
               <li key={course.id}>
-                <CourseCard course={course} onSelect={handleSelect} />
+                <CourseCard
+                  course={course}
+                  onSelect={handleSelect}
+                  pending={pendingId === course.id}
+                  disabled={pendingId !== null && pendingId !== course.id}
+                />
               </li>
             ))}
           </ul>
