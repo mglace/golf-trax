@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCourseSearch } from './useCourseSearch'
 import { useGeolocation } from './useGeolocation'
@@ -16,7 +16,7 @@ import {
   WifiOffIcon,
 } from '@/components/icons'
 import { useOnlineStatus } from '@/hooks/useOnlineStatus'
-import { cacheCourse } from '@/db/coursesRepo'
+import { cacheFullCourse } from '@/db/coursesRepo'
 import { sortCoursesByDistance, type RankedCourse } from '@/domain/geo'
 import type { ApiCourse } from '@/api/types'
 
@@ -34,10 +34,26 @@ export function CourseSearchPage() {
   // Lets a located user switch back to the API's default order (and back again).
   const [distanceSortEnabled, setDistanceSortEnabled] = useState(true)
 
+  // The id currently being enriched+cached before we route to setup. Fetching
+  // the full course is a network round-trip, so we surface a spinner on the
+  // tapped card and block further taps until it resolves.
+  const [pendingId, setPendingId] = useState<number | null>(null)
+  const selectAbort = useRef<AbortController | null>(null)
+  // Cancel an in-flight selection if the user navigates away first.
+  useEffect(() => () => selectAbort.current?.abort(), [])
+
   async function handleSelect(course: ApiCourse) {
-    // Ensure the chosen course is cached before we route to the setup screen,
-    // so that screen can read it from IndexedDB even if the network drops.
-    await cacheCourse(course)
+    if (pendingId !== null) return // re-entrancy guard: one selection at a time
+    setPendingId(course.id)
+    selectAbort.current?.abort()
+    const controller = new AbortController()
+    selectAbort.current = controller
+    // Ensure the COMPLETE course is cached before routing to setup. Search
+    // results are lean (no tee boxes, no coordinates), so this fetches the full
+    // detail record — giving the setup screen its tees and "near you" the
+    // coordinates it needs — and works from IndexedDB even if the network drops.
+    await cacheFullCourse(course, controller.signal)
+    if (controller.signal.aborted) return
     navigate(`/new/${course.id}`)
   }
 
@@ -174,6 +190,8 @@ export function CourseSearchPage() {
                     course={course}
                     onSelect={handleSelect}
                     distanceMeters={distanceMeters}
+                    pending={pendingId === course.id}
+                    disabled={pendingId !== null && pendingId !== course.id}
                   />
                 </li>
               ))}

@@ -19,6 +19,11 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      // We register the SW ourselves (src/pwa/registerServiceWorker.ts) so we
+      // can trigger update checks on foreground/interval — essential for pinned
+      // home-screen installs, which resume rather than navigate. `null` stops
+      // the plugin from also auto-injecting a registration (avoids double-reg).
+      injectRegister: null,
       includeAssets: ['favicon.svg', 'icon.svg', 'icon-maskable.svg'],
       manifest: {
         name: 'GolfTrax',
