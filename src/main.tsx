@@ -4,9 +4,14 @@ import { RouterProvider } from 'react-router-dom'
 import { router } from './router'
 import { syncConfig } from './auth/authConfig'
 import { AuthContext, INERT } from './auth/authContext'
+import { registerServiceWorker } from './pwa/registerServiceWorker'
 import './index.css'
 
 const rootEl = document.getElementById('root')!
+
+// Register the SW and keep pinned home-screen installs current (autoUpdate
+// reloads once a new version is found; this triggers the check on foreground).
+registerServiceWorker()
 
 /**
  * Optional sync is gated at the root: a sync-enabled build dynamically imports
