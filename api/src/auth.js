@@ -68,9 +68,16 @@ async function verifyToken(token) {
  */
 function requireAuth(handler) {
   return async (request, context) => {
-    const header = request.headers.get('authorization') || ''
+    // Azure Static Web Apps reserves and rewrites the `Authorization` header on
+    // requests to its managed functions, so the client sends the bearer in a
+    // custom header SWA forwards verbatim. Fall back to `Authorization` for
+    // local proxy-mode dev, where nothing rewrites it.
+    const header =
+      request.headers.get('x-golftrax-authorization') ||
+      request.headers.get('authorization') ||
+      ''
     const match = /^Bearer (.+)$/i.exec(header.trim())
-    if (!match) return json(401, { error: 'Missing bearer token.', _dbg: 'AUTHDBG-nohdr' })
+    if (!match) return json(401, { error: 'Missing bearer token.' })
 
     let payload
     try {
@@ -82,22 +89,7 @@ function requireAuth(handler) {
       }
       // Don't leak token internals; a bad/expired token is a routine 401.
       context.warn(`JWT validation failed: ${err && (err.code || err.message)}`)
-      let recvHeader
-      try {
-        recvHeader = JSON.parse(Buffer.from(match[1].split('.')[0], 'base64').toString('utf8'))
-      } catch (e) {
-        recvHeader = { decodeErr: String(e), rawPrefix: match[1].slice(0, 12) }
-      }
-      return json(401, {
-        error: 'Invalid or expired token.',
-        _dbg: 'AUTHDBG-verifyfail',
-        _code: err && err.code,
-        _msg: err && err.message,
-        _recvAlg: recvHeader && recvHeader.alg,
-        _recvTyp: recvHeader && recvHeader.typ,
-        _tokLen: match[1].length,
-        _segs: match[1].split('.').length,
-      })
+      return json(401, { error: 'Invalid or expired token.' })
     }
 
     const userId = payload.sub

@@ -41,6 +41,12 @@ async function apiFetch(path: string, token: string, init?: RequestInit): Promis
     ...init,
     headers: {
       ...(init?.headers ?? {}),
+      // Azure Static Web Apps reserves and overwrites the `Authorization`
+      // header on requests to its managed functions, so the Auth0 bearer never
+      // reaches the backend. Send it in a custom header SWA forwards untouched;
+      // the backend reads this first (and still falls back to Authorization for
+      // local proxy-mode dev, where nothing rewrites it).
+      'X-GolfTrax-Authorization': `Bearer ${token}`,
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
