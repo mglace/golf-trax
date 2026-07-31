@@ -46,6 +46,32 @@ export class GolfTraxDB extends Dexie {
             if (r.owner === undefined) r.owner = 'local'
           })
       })
+    // v3: course ids are opaque STRINGS. Older data stored manual courses under
+    // a numeric primary key (`-1`, `-2`, …) and rounds referenced them by number.
+    // IndexedDB keys are type-sensitive, so a string route param / lookup would
+    // never match a numeric key — restamp every numeric id as its string form
+    // (a course primary key can't be modified in place, so delete + re-put).
+    this.version(3)
+      .stores({
+        courses: 'id, lastPlayedDate',
+        rounds: 'id, status, date, courseId, dirty, deletedAt',
+        profile: 'id',
+        syncState: 'id',
+      })
+      .upgrade(async (tx) => {
+        const courses = tx.table('courses')
+        const numericId = await courses.filter((c) => typeof c.id === 'number').toArray()
+        for (const c of numericId) {
+          await courses.delete(c.id)
+          await courses.put({ ...c, id: String(c.id) })
+        }
+        await tx
+          .table('rounds')
+          .toCollection()
+          .modify((r: { courseId: unknown }) => {
+            if (typeof r.courseId === 'number') r.courseId = String(r.courseId)
+          })
+      })
   }
 }
 

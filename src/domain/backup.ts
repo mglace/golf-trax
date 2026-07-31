@@ -72,6 +72,17 @@ function isObject(v: unknown): v is Record<string, unknown> {
 }
 
 /**
+ * Normalize an imported course id to a non-empty string, tolerating a legacy
+ * finite number (older exports stored manual-course ids as negative numbers).
+ * Returns null when the value can't be a valid id.
+ */
+function coerceCourseId(v: unknown): string | null {
+  if (typeof v === 'string') return v === '' ? null : v
+  if (typeof v === 'number' && Number.isFinite(v)) return String(v)
+  return null
+}
+
+/**
  * Validate a single round from imported (untrusted) JSON. Returns the round if
  * it has the required, correctly-typed fields; otherwise null (caller skips
  * and counts it). Optional fields are passed through without deep validation —
@@ -110,7 +121,7 @@ function validateRound(v: unknown): Round | null {
   if (!isObject(v)) return null
   const {
     id,
-    courseId,
+    courseId: rawCourseId,
     courseName,
     clubName,
     gender,
@@ -122,7 +133,10 @@ function validateRound(v: unknown): Round | null {
     updatedAt,
   } = v
   if (typeof id !== 'string' || id === '') return null
-  if (typeof courseId !== 'string' || courseId === '') return null
+  // courseId is an opaque string; coerce a legacy finite number (older exports
+  // held numeric manual-course ids) rather than dropping the round.
+  const courseId = coerceCourseId(rawCourseId)
+  if (courseId === null) return null
   if (typeof courseName !== 'string') return null
   if (typeof clubName !== 'string') return null
   if (gender !== 'male' && gender !== 'female') return null
@@ -144,6 +158,7 @@ function validateRound(v: unknown): Round | null {
   // updatedAt was added alongside drafts; tolerate older exports missing it.
   const round: Round = {
     ...(v as unknown as Round),
+    courseId, // coerced to string above (may have been a legacy number)
     holes: cleanHoles,
     updatedAt: typeof updatedAt === 'string' ? updatedAt : date,
   }
@@ -169,10 +184,14 @@ function validateRound(v: unknown): Round | null {
 /** Validate a single cached course from imported JSON. */
 function validateCourse(v: unknown): CachedCourse | null {
   if (!isObject(v)) return null
-  if (typeof v.id !== 'string' || v.id === '') return null
+  // Course ids are opaque strings; coerce a legacy finite number (older exports
+  // held numeric manual-course ids) rather than dropping the course.
+  const id = coerceCourseId(v.id)
+  if (id === null) return null
   // `cachedAt` was always written on cache; backfill for resilience.
   return {
     ...(v as unknown as CachedCourse),
+    id,
     cachedAt: typeof v.cachedAt === 'string' ? v.cachedAt : new Date(0).toISOString(),
   }
 }

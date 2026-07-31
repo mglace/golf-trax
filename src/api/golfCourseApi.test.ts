@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { getCourseById, ApiError } from './golfCourseApi'
+import { getCourseById, searchCourses, ApiError } from './golfCourseApi'
 import type { ApiCourse } from './types'
 
 const course: ApiCourse = {
@@ -43,7 +43,7 @@ describe('getCourseById', () => {
     await expect(getCourseById('34')).rejects.toBeInstanceOf(ApiError)
   })
 
-  it('throws on an error-shaped 200 body with no numeric id', async () => {
+  it('throws on an error-shaped 200 body with no id', async () => {
     stubFetch({ error: 'something went wrong' })
     await expect(getCourseById('34')).rejects.toBeInstanceOf(ApiError)
   })
@@ -51,5 +51,27 @@ describe('getCourseById', () => {
   it('surfaces a 404 as a not-found ApiError', async () => {
     stubFetch({ error: 'not found' }, 404)
     await expect(getCourseById('34')).rejects.toMatchObject({ kind: 'not-found' })
+  })
+
+  it('normalizes a numeric id to a string so cache keys/routing stay consistent', async () => {
+    stubFetch({ course: { ...course, id: 34 as unknown as string } })
+    const result = await getCourseById('34')
+    expect(result.id).toBe('34')
+    expect(typeof result.id).toBe('string')
+  })
+})
+
+describe('searchCourses', () => {
+  it('normalizes result ids to strings (and drops entries with no id)', async () => {
+    stubFetch({
+      courses: [
+        { ...course, id: 'yasc0cpx' },
+        { ...course, id: 34 as unknown as string }, // legacy numeric id → coerced
+        { ...course, id: undefined as unknown as string }, // no id → dropped
+      ],
+    })
+    const results = await searchCourses('lubbock')
+    expect(results.map((c) => c.id)).toEqual(['yasc0cpx', '34'])
+    expect(results.every((c) => typeof c.id === 'string')).toBe(true)
   })
 })

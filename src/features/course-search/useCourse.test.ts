@@ -108,7 +108,7 @@ describe('seedCourse (selection-flow passthrough)', () => {
     expect(seedCourse('34', fullCourse)).toBe(fullCourse)
   })
 
-  it('accepts a local manual course (negative id, complete by construction)', () => {
+  it('accepts a local manual course (manual id)', () => {
     const manual: ApiCourse = { ...fullCourse, id: 'manual-1' }
     expect(seedCourse('manual-1', manual)).toBe(manual)
   })

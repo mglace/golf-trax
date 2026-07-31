@@ -3,6 +3,7 @@ import {
   blankHoles,
   blankManualCourse,
   buildManualCourse,
+  isManualCourseId,
   isManualCourseValid,
   nextManualCourseId,
   validateManualCourse,
@@ -48,6 +49,22 @@ describe('validateManualCourse', () => {
     expect(validateManualCourse(input({ holes })).holes).toBeDefined()
     holes[3].par = 3.5 // fractional par would corrupt par-total / vs-par math
     expect(validateManualCourse(input({ holes })).holes).toBeDefined()
+  })
+})
+
+describe('isManualCourseId', () => {
+  it('recognizes the manual-N form', () => {
+    expect(isManualCourseId('manual-1')).toBe(true)
+    expect(isManualCourseId('manual-42')).toBe(true)
+  })
+  it('recognizes legacy negative ids (number and migrated string forms)', () => {
+    expect(isManualCourseId(-1)).toBe(true)
+    expect(isManualCourseId('-1')).toBe(true) // after the v3 key-stringify migration
+  })
+  it('treats opaque API slugs and numeric API ids as not-manual', () => {
+    expect(isManualCourseId('yasc0cpx')).toBe(false)
+    expect(isManualCourseId('34')).toBe(false)
+    expect(isManualCourseId(34)).toBe(false)
   })
 })
 

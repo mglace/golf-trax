@@ -83,13 +83,14 @@ export function isManualCourseValid(input: ManualCourseInput): boolean {
 export const MANUAL_ID_PREFIX = 'manual-'
 
 /**
- * Whether an id belongs to a local manual course. Accepts a legacy negative
- * NUMBER id too — early builds assigned manual courses negative integers before
- * ids became opaque strings — so pre-existing manual courses keep working.
+ * Whether an id belongs to a local manual course. Early builds assigned manual
+ * courses negative integers before ids became opaque strings; those persist as
+ * a negative NUMBER (pre-migration) or a `"-N"` STRING (after the v3 upgrade
+ * that stringifies keys), so both are recognized alongside the `manual-N` form.
  */
 export function isManualCourseId(id: string | number): boolean {
   if (typeof id === 'number') return id < 0
-  return id.startsWith(MANUAL_ID_PREFIX)
+  return id.startsWith(MANUAL_ID_PREFIX) || /^-\d+$/.test(id)
 }
 
 /**

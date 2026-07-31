@@ -110,6 +110,26 @@ describe('parseBackup validation', () => {
     expect(skipped).toEqual({ courses: 1, rounds: 2 })
   })
 
+  it('coerces legacy numeric ids (older exports) to strings instead of dropping them', () => {
+    // Backups exported before ids became strings hold manual courses under a
+    // negative NUMBER id, and rounds referencing them by that number. Import
+    // must keep them, coercing the ids — not skip them as malformed.
+    const text = JSON.stringify({
+      app: BACKUP_APP,
+      schemaVersion: 1,
+      exportedAt: '2026-07-28T00:00:00.000Z',
+      data: {
+        rounds: [round({ courseId: -1 as unknown as string })],
+        courses: [course({ id: -1 as unknown as string })],
+        profile: null,
+      },
+    })
+    const { backup, skipped } = parseBackup(text)
+    expect(skipped).toEqual({ courses: 0, rounds: 0 })
+    expect(backup.data.rounds[0].courseId).toBe('-1')
+    expect(backup.data.courses[0].id).toBe('-1')
+  })
+
   it('backfills updatedAt from date for older round exports', () => {
     const legacy = round()
     delete (legacy as Partial<Round>).updatedAt

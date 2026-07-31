@@ -77,7 +77,7 @@ describe('cacheFullCourse', () => {
     expect((await getCachedCourse('34'))?.tees.male).toHaveLength(1)
   })
 
-  it('does not fetch for local manual courses (negative id)', async () => {
+  it('does not fetch for local manual courses (manual id)', async () => {
     const fetchSpy = vi.fn()
     vi.stubGlobal('fetch', fetchSpy)
     const manual: ApiCourse = { ...leanCourse, id: 'manual-1' }
@@ -156,12 +156,12 @@ describe('cacheCourse does not downgrade a complete record', () => {
 
 describe('isCachedCourseComplete', () => {
   const base = { ...leanCourse, cachedAt: 'now' } as CachedCourse
-  it('is true for records with tees, a hydrated flag, or a negative id', () => {
+  it('is true for records with tees, a hydrated flag, or a manual id', () => {
     expect(isCachedCourseComplete({ ...base, ...fullCourse } as CachedCourse)).toBe(true)
     expect(isCachedCourseComplete({ ...base, hydrated: true })).toBe(true)
     expect(isCachedCourseComplete({ ...base, id: 'manual-1' })).toBe(true)
   })
-  it('is false for a lean, non-hydrated, positive-id record', () => {
+  it('is false for a lean, non-hydrated, API-id record', () => {
     expect(isCachedCourseComplete(base)).toBe(false)
   })
 })
