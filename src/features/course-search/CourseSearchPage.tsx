@@ -7,7 +7,7 @@ import { NearYou } from './NearYou'
 import { ApiErrorMessage } from '@/components/ApiErrorMessage'
 import { ChevronLeftIcon, PlusIcon, SearchIcon, WifiOffIcon } from '@/components/icons'
 import { useOnlineStatus } from '@/hooks/useOnlineStatus'
-import { cacheCourse } from '@/db/coursesRepo'
+import { cacheFullCourse } from '@/db/coursesRepo'
 import type { ApiCourse } from '@/api/types'
 
 /**
@@ -21,9 +21,11 @@ export function CourseSearchPage() {
   const { query, setQuery, status, results, error, retry } = useCourseSearch()
 
   async function handleSelect(course: ApiCourse) {
-    // Ensure the chosen course is cached before we route to the setup screen,
-    // so that screen can read it from IndexedDB even if the network drops.
-    await cacheCourse(course)
+    // Ensure the COMPLETE course is cached before routing to setup. Search
+    // results are lean (no tee boxes, no coordinates), so this fetches the full
+    // detail record — giving the setup screen its tees and "near you" the
+    // coordinates it needs — and works from IndexedDB even if the network drops.
+    await cacheFullCourse(course)
     navigate(`/new/${course.id}`)
   }
 

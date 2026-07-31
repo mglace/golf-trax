@@ -39,6 +39,17 @@ export function getTeeOptions(course: ApiCourse): TeeOption[] {
   return [...build(course.tees?.male, 'male'), ...build(course.tees?.female, 'female')]
 }
 
+/**
+ * Whether a course carries usable tee data (at least one tee box). GolfCourseAPI's
+ * `/v1/search` returns lean course objects with an empty `tees` — the tee boxes
+ * (and coordinates) only arrive from the `/v1/courses/{id}` detail endpoint. This
+ * distinguishes a full detail record from a lean search result, so callers know
+ * when to fetch the complete course.
+ */
+export function hasTeeData(course: ApiCourse): boolean {
+  return (course.tees?.male?.length ?? 0) > 0 || (course.tees?.female?.length ?? 0) > 0
+}
+
 /** Look up a specific tee box by (gender, teeName). */
 export function findTee(
   course: ApiCourse,

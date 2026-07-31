@@ -6,6 +6,8 @@
 import { db } from './db'
 import type { CachedCourse } from './types'
 import type { ApiCourse } from '@/api/types'
+import { getCourseById } from '@/api/golfCourseApi'
+import { hasTeeData } from '@/domain/course'
 import {
   buildManualCourse,
   nextManualCourseId,
@@ -16,8 +18,13 @@ import {
 export async function cacheCourse(course: ApiCourse): Promise<void> {
   const existing = await db.courses.get(course.id)
   const now = new Date().toISOString()
+  // Never let a lean `/v1/search` result downgrade a complete cached record: if
+  // we already hold the full course (tee boxes + coordinates from the detail
+  // endpoint) and the incoming one is lean, keep the richer data. A subsequent
+  // search must not strip the coordinates that "near you" relies on.
+  const base = existing && hasTeeData(existing) && !hasTeeData(course) ? existing : course
   const record: CachedCourse = {
-    ...course,
+    ...base,
     lastPlayedDate: existing?.lastPlayedDate,
     cachedAt: now,
   }
@@ -27,6 +34,32 @@ export async function cacheCourse(course: ApiCourse): Promise<void> {
 /** Cache many courses at once (e.g. a page of search results). */
 export async function cacheCourses(courses: ApiCourse[]): Promise<void> {
   await Promise.all(courses.map(cacheCourse))
+}
+
+/**
+ * Cache the COMPLETE record for a course, fetching the detail endpoint when the
+ * caller only has a lean `/v1/search` result. Search results omit tee boxes
+ * (needed to log a round) and coordinates (needed for "near you"), so a lean
+ * result is enriched via `/v1/courses/{id}` before caching. Negative ids are
+ * local manual courses — already complete — and are cached as-is. If the fetch
+ * fails (e.g. offline) we fall back to caching what we have so the flow can
+ * still proceed. Returns the course that was cached.
+ */
+export async function cacheFullCourse(
+  course: ApiCourse,
+  signal?: AbortSignal,
+): Promise<ApiCourse> {
+  if (course.id > 0 && !hasTeeData(course)) {
+    try {
+      const full = await getCourseById(course.id, signal)
+      await cacheCourse(full)
+      return full
+    } catch {
+      // Offline / detail fetch failed — cache the lean result rather than losing it.
+    }
+  }
+  await cacheCourse(course)
+  return course
 }
 
 export async function getCachedCourse(id: number): Promise<CachedCourse | undefined> {

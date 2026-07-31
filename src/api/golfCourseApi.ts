@@ -105,8 +105,15 @@ export async function searchCourses(query: string, signal?: AbortSignal): Promis
   return data.courses ?? []
 }
 
-/** Fetch a single course by its numeric API id. */
+/**
+ * Fetch a single course by its numeric API id. Unlike `/v1/search` (which wraps
+ * its results in `{ courses: [...] }`), the detail endpoint wraps the course in
+ * `{ course: {...} }`. Unwrap it defensively — accept a bare course too — so the
+ * caller always gets a real {@link ApiCourse} rather than the envelope (whose
+ * `id`/`tees` would be `undefined`).
+ */
 export async function getCourseById(id: number, signal?: AbortSignal): Promise<ApiCourse> {
   const url = DIRECT_MODE ? `${DIRECT_BASE}/v1/courses/${id}` : `/api/courses/${id}`
-  return getJson<ApiCourse>(url, signal)
+  const data = await getJson<{ course?: ApiCourse } & Partial<ApiCourse>>(url, signal)
+  return (data.course ?? (data as ApiCourse))
 }
