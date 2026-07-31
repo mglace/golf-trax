@@ -125,6 +125,15 @@ export async function getCompletedRounds(): Promise<Round[]> {
   return rounds.filter((r) => !r.deletedAt).sort((a, b) => b.date.localeCompare(a.date))
 }
 
+/**
+ * The most recent completed rounds, newest first. Backs the home-screen
+ * "recent rounds" strip, which shows a short preview rather than the full list.
+ */
+export async function getRecentRounds(limit = 5): Promise<Round[]> {
+  const rounds = await db.rounds.where('status').equals('complete').toArray()
+  return rounds.sort((a, b) => b.date.localeCompare(a.date)).slice(0, limit - 1)
+}
+
 /** Count of live (non-tombstoned) rounds, for the Settings summary. */
 export async function countRounds(): Promise<number> {
   return db.rounds.filter((r) => !r.deletedAt).count()
