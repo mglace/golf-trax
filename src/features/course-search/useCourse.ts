@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { getCachedCourse, cacheCourse, isCachedCourseComplete } from '@/db/coursesRepo'
 import { getCourseById, ApiError } from '@/api/golfCourseApi'
+import { hasTeeData } from '@/domain/course'
 import type { ApiCourse } from '@/api/types'
 
 type LoadState =
@@ -41,16 +42,25 @@ export async function resolveCourse(id: number, signal?: AbortSignal): Promise<A
 }
 
 /**
- * The already-resolved course from the selection flow, but only when it actually
- * describes the id being loaded. Guards against a stale navigation-state course
- * (e.g. from the browser back/forward cache) being shown for a different course.
+ * The already-resolved course from the selection flow, usable only when it both
+ * describes the id being loaded AND carries enough to log a round (tee data, or
+ * a local manual course). Rejecting an incomplete seed is important: when the
+ * `/v1/courses/{id}` detail fetch fails, `cacheFullCourse` returns the LEAN
+ * search result (no tees), and seeding that would short-circuit the by-id
+ * re-resolve — leaving setup stuck on the terminal "no tee data" message with
+ * no way to recover if the connection came back a moment later. An incomplete
+ * (or malformed) seed falls through to {@link resolveCourse}, which re-attempts
+ * the detail fetch and falls back to the cached copy.
  */
 export function seedCourse(
   id: number | undefined,
   initialCourse: ApiCourse | undefined,
 ): ApiCourse | undefined {
   if (id === undefined || Number.isNaN(id)) return undefined
-  return initialCourse && initialCourse.id === id ? initialCourse : undefined
+  if (!initialCourse || initialCourse.id !== id) return undefined
+  // Complete === has tee data, or a local manual course (negative id).
+  if (!hasTeeData(initialCourse) && !(initialCourse.id < 0)) return undefined
+  return initialCourse
 }
 
 /**
@@ -58,11 +68,12 @@ export function seedCourse(
  * with React state, cancellation, and a retry.
  *
  * `initialCourse` is the already-resolved course handed over from the selection
- * flow (via router navigation state). When it's present and matches `id`, it's
- * rendered directly — no cache read-back or detail re-fetch — which is what
- * keeps on-course selection from dead-ending at "We couldn't find that course"
- * when the by-id resolution can't find the course again. A manual retry still
- * forces a fresh {@link resolveCourse}.
+ * flow (via router navigation state). When {@link seedCourse} accepts it (right
+ * id, has tee data), it's rendered directly — no cache read-back or detail
+ * re-fetch — which is what keeps on-course selection from dead-ending at "We
+ * couldn't find that course" when the by-id resolution can't find the course
+ * again. Anything else (deep-link, refresh with a stale/incomplete seed) resolves
+ * by id from cache/API.
  */
 export function useCourse(
   id: number | undefined,
@@ -86,9 +97,8 @@ export function useCourse(
       return
     }
 
-    // Selection handed us the resolved course — render it as-is (a manual retry
-    // clears this by bumping retryTick, falling through to a fresh resolve).
-    if (retryTick === 0 && seed) {
+    // Selection handed us a complete course — render it as-is, no fetch.
+    if (seed) {
       setState({ status: 'success', course: seed, error: null })
       return
     }

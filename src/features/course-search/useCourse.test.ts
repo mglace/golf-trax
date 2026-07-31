@@ -102,10 +102,22 @@ describe('resolveCourse', () => {
 })
 
 describe('seedCourse (selection-flow passthrough)', () => {
-  it('returns the course when it matches the requested id', () => {
+  it('returns a complete course when it matches the requested id', () => {
     // The setup screen renders this directly — no by-id cache read-back or
     // detail re-fetch — so selection can never dead-end at "not found".
     expect(seedCourse(34, fullCourse)).toBe(fullCourse)
+  })
+
+  it('accepts a local manual course (negative id, complete by construction)', () => {
+    const manual: ApiCourse = { ...fullCourse, id: -1 }
+    expect(seedCourse(-1, manual)).toBe(manual)
+  })
+
+  it('rejects a lean course with no tee data so setup re-resolves by id', () => {
+    // cacheFullCourse returns the lean search result when the detail fetch
+    // failed; seeding it would strand setup on the "no tee data" message
+    // instead of letting resolveCourse re-attempt the detail fetch.
+    expect(seedCourse(34, leanCourse)).toBeUndefined()
   })
 
   it('ignores a course whose id does not match (stale navigation state)', () => {

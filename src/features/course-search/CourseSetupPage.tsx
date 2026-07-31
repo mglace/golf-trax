@@ -20,8 +20,10 @@ export function CourseSetupPage() {
   const { courseId } = useParams<{ courseId: string }>()
   const id = courseId ? Number(courseId) : undefined
   // The selection flow passes the course it just fetched+cached (tees included)
-  // so we can render it directly instead of re-resolving it by id. Deep-links
-  // and refreshes arrive with no state and resolve from cache/API as usual.
+  // so we can render it directly instead of re-resolving it by id. A plain
+  // deep-link carries no navigation state and resolves from cache/API; a refresh
+  // replays this same state (history.state survives reloads), which is fine —
+  // seedCourse only accepts it when it's for this id and has tee data.
   const preloaded = (location.state as { course?: ApiCourse } | null)?.course
   const { status, course, error, retry } = useCourse(id, preloaded)
 

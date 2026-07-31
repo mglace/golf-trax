@@ -69,8 +69,8 @@ export function CourseSearchPage() {
     // screen then renders THIS object instead of re-reading it back from the
     // cache by id — the re-read is the step that dead-ends at "We couldn't find
     // that course" if the cache lookup misses (e.g. the detail endpoint
-    // canonicalized to a different id) or a re-fetch 404s. A deep-link/refresh
-    // has no navigation state and still resolves by id.
+    // canonicalized to a different id) or a re-fetch 404s. A plain deep-link
+    // carries no navigation state and still resolves by id.
     navigate(`/new/${cached.id}`, { state: { course: cached } })
   }
 
