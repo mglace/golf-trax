@@ -1,19 +1,29 @@
 import { ChevronRightIcon, MapPinIcon, SpinnerIcon } from '@/components/icons'
 import { courseSummary, formatCourseName, formatLocation } from '@/domain/course'
+import { formatMiles } from '@/domain/geo'
 import type { ApiCourse } from '@/api/types'
 
 interface CourseCardProps {
   course: ApiCourse
   onSelect: (course: ApiCourse) => void
+  /** Distance from the user, in metres. Shown as a badge when a finite number. */
+  distanceMeters?: number | null
   /** This card's course is being loaded (full detail fetched before routing). */
   pending?: boolean
   /** Another selection is in flight — block interaction with this card. */
   disabled?: boolean
 }
 
-export function CourseCard({ course, onSelect, pending = false, disabled = false }: CourseCardProps) {
+export function CourseCard({
+  course,
+  onSelect,
+  distanceMeters,
+  pending = false,
+  disabled = false,
+}: CourseCardProps) {
   const location = formatLocation(course)
   const summary = courseSummary(course)
+  const distance = Number.isFinite(distanceMeters) ? formatMiles(distanceMeters as number) : null
 
   return (
     <button
@@ -37,6 +47,9 @@ export function CourseCard({ course, onSelect, pending = false, disabled = false
           </p>
         )}
       </div>
+      {distance && (
+        <span className="shrink-0 text-xs font-medium text-slate-500">{distance}</span>
+      )}
       {pending ? (
         <SpinnerIcon className="h-5 w-5 shrink-0 text-fairway-600" aria-hidden />
       ) : (

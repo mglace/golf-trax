@@ -70,6 +70,64 @@ export function nearbyCourses<T extends ApiCourse>(
   return ranked.slice(0, limit)
 }
 
+export interface RankedCourse<T extends ApiCourse = ApiCourse> {
+  course: T
+  /** Distance in metres, or null when the course has no usable coordinates. */
+  distanceMeters: number | null
+}
+
+/**
+ * Order courses by proximity to `origin` without dropping any: located courses
+ * come first, nearest to farthest; courses with no usable coordinates ((0,0),
+ * missing, or non-finite) keep their original relative order and sink to the
+ * bottom. Unlike {@link nearbyCourses}, nothing is filtered or distance-capped —
+ * a manual search should still surface every match, just re-ordered.
+ */
+export function sortCoursesByDistance<T extends ApiCourse>(
+  courses: T[],
+  origin: Coords,
+): RankedCourse<T>[] {
+  const located: { course: T; distanceMeters: number; index: number }[] = []
+  const unlocated: RankedCourse<T>[] = []
+  courses.forEach((course, index) => {
+    const coords = courseCoords(course)
+    if (coords) {
+      located.push({ course, distanceMeters: haversineMeters(origin, coords), index })
+    } else {
+      unlocated.push({ course, distanceMeters: null })
+    }
+  })
+  // Stable nearest-first: ties keep their original relative order.
+  located.sort((a, b) => a.distanceMeters - b.distanceMeters || a.index - b.index)
+  return [
+    ...located.map(({ course, distanceMeters }) => ({ course, distanceMeters })),
+    ...unlocated,
+  ]
+}
+
+/**
+ * Fill in coordinates missing from lean courses (e.g. `/v1/search` results,
+ * which omit lat/lng) using coordinates already known for that course id —
+ * typically full-detail records cached from a previous lookup. A course that
+ * already has usable coordinates, or has none available in `coordsById`, is
+ * returned unchanged. Lets {@link sortCoursesByDistance} rank the courses the
+ * user has opened before, without any extra network calls.
+ */
+export function withKnownCoords<T extends ApiCourse>(
+  courses: T[],
+  coordsById: Map<number, Coords>,
+): T[] {
+  return courses.map((course) => {
+    if (courseCoords(course)) return course
+    const coords = coordsById.get(course.id)
+    if (!coords) return course
+    return {
+      ...course,
+      location: { ...course.location, latitude: coords.lat, longitude: coords.lng },
+    }
+  })
+}
+
 /** Human-friendly distance in miles: "0.4 mi", "2.3 mi", "17 mi". */
 export function formatMiles(meters: number): string {
   const miles = meters / METERS_PER_MILE
