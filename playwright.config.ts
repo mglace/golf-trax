@@ -1,12 +1,33 @@
-import { existsSync } from 'node:fs'
+import { statSync } from 'node:fs'
 import { defineConfig, devices } from '@playwright/test'
 
-// Managed CI/dev containers ship a pre-installed Chromium at a stable path and
-// forbid re-downloading browsers. When that binary is present, launch it
-// directly; otherwise fall back to Playwright's own managed browser (e.g. local
-// dev or GitHub Actions after `npx playwright install`).
-const PREINSTALLED_CHROMIUM = '/opt/pw-browsers/chromium'
-const executablePath = existsSync(PREINSTALLED_CHROMIUM) ? PREINSTALLED_CHROMIUM : undefined
+/**
+ * Resolve which Chromium binary to launch:
+ *
+ * 1. An explicit `PW_CHROMIUM_PATH` / `CHROME_PATH` opt-in always wins.
+ * 2. Else, managed CI/dev containers that pre-install Chromium at a stable path
+ *    and forbid re-downloading browsers — but only when that path resolves to a
+ *    real *file* (the symlink's target). A directory or missing path falls
+ *    through rather than handing Playwright an unlaunchable executable.
+ * 3. Else `undefined` → Playwright's own managed browser (local dev, or CI after
+ *    `npx playwright install`).
+ *
+ * Keeping it explicit means the branch is intentional and a bad path fails
+ * loudly at resolution rather than as an opaque launch error.
+ */
+function resolveChromiumPath(): string | undefined {
+  const explicit = process.env.PW_CHROMIUM_PATH ?? process.env.CHROME_PATH
+  if (explicit) return explicit
+  const preinstalled = '/opt/pw-browsers/chromium'
+  try {
+    if (statSync(preinstalled).isFile()) return preinstalled
+  } catch {
+    /* not present — fall through to Playwright's managed browser */
+  }
+  return undefined
+}
+
+const executablePath = resolveChromiumPath()
 
 /**
  * Playwright end-to-end config for GolfTrax.

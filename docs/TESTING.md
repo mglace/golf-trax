@@ -39,11 +39,17 @@ offline and in CI.
 
 ### Browsers in managed containers
 
-Some managed dev/CI containers ship a pre-installed Chromium at
-`/opt/pw-browsers/chromium` and forbid re-downloading browsers. The config
-launches that binary when it's present and otherwise falls back to Playwright's
-own managed browser — so locally (or in CI after `npx playwright install`) the
-standard flow just works.
+Set `PW_CHROMIUM_PATH` (or `CHROME_PATH`) to launch a specific Chromium binary.
+Failing that, some managed dev/CI containers pre-install Chromium at
+`/opt/pw-browsers/chromium` and forbid re-downloading browsers; the config uses
+that path only when it resolves to a real file, and otherwise falls back to
+Playwright's own managed browser — so locally (or in CI after
+`npx playwright install`) the standard flow just works.
+
+> The `e2e/` sources and `playwright.config.ts` are their own TypeScript project
+> (`tsconfig.e2e.json`, referenced from `tsconfig.json`), so `npm run typecheck`
+> covers them — Playwright's esbuild transpile strips types without checking
+> them, which would otherwise let the fixtures drift from `src/api/types.ts`.
 
 ## What's covered today
 
