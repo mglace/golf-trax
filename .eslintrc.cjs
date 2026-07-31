@@ -16,4 +16,15 @@ module.exports = {
     'react-hooks/exhaustive-deps': 'warn',
     'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
   },
+  overrides: [
+    {
+      // Playwright config + E2E specs run in Node and use test globals, not the
+      // browser/React rules that apply to the app source under src/.
+      files: ['playwright.config.ts', 'e2e/**/*.ts'],
+      env: { browser: true, node: true },
+      rules: {
+        'react-refresh/only-export-components': 'off',
+      },
+    },
+  ],
 }
