@@ -53,7 +53,13 @@ export interface ApiLocation {
 }
 
 export interface ApiCourse {
-  id: number
+  /**
+   * Opaque course identifier from GolfCourseAPI. Treated as a STRING: real ids
+   * are alphanumeric slugs (e.g. "yasc0cpx"), not numbers, so never coerce this
+   * with Number() — doing so yields NaN and breaks course lookup/routing. Local
+   * manual courses use a "manual-N" id (see manualCourse.ts).
+   */
+  id: string
   club_name: string
   course_name: string
   scorecard_url?: string

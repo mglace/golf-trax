@@ -10,6 +10,7 @@ import { getCourseById } from '@/api/golfCourseApi'
 import { hasTeeData } from '@/domain/course'
 import {
   buildManualCourse,
+  isManualCourseId,
   nextManualCourseId,
   type ManualCourseInput,
 } from '@/domain/manualCourse'
@@ -17,11 +18,11 @@ import {
 /**
  * A cached record is "complete" when it carries the full detail (tee boxes), was
  * hydrated from the detail endpoint (so it's complete even if legitimately
- * tee-less), or is a local manual course (negative id). Lean `/v1/search`
- * results are not complete.
+ * tee-less), or is a local manual course. Lean `/v1/search` results are not
+ * complete.
  */
 export function isCachedCourseComplete(course: CachedCourse): boolean {
-  return course.hydrated === true || hasTeeData(course) || course.id < 0
+  return course.hydrated === true || hasTeeData(course) || isManualCourseId(course.id)
 }
 
 /**
@@ -36,7 +37,7 @@ export async function cacheCourse(
   const existing = await db.courses.get(course.id)
   const now = new Date().toISOString()
   const hydrated = opts?.hydrated === true
-  const incomingComplete = hydrated || hasTeeData(course) || course.id < 0
+  const incomingComplete = hydrated || hasTeeData(course) || isManualCourseId(course.id)
   // Never let a lean `/v1/search` result downgrade a complete cached record: if
   // we already hold the full course (tee boxes + coordinates from the detail
   // endpoint) and the incoming one is lean, keep the richer data. A subsequent
@@ -72,7 +73,7 @@ export async function cacheFullCourse(
   course: ApiCourse,
   signal?: AbortSignal,
 ): Promise<ApiCourse> {
-  if (course.id > 0 && !hasTeeData(course)) {
+  if (!isManualCourseId(course.id) && !hasTeeData(course)) {
     try {
       const full = await getCourseById(course.id, signal)
       await cacheCourse(full, { hydrated: true })
@@ -85,7 +86,7 @@ export async function cacheFullCourse(
   return course
 }
 
-export async function getCachedCourse(id: number): Promise<CachedCourse | undefined> {
+export async function getCachedCourse(id: string): Promise<CachedCourse | undefined> {
   return db.courses.get(id)
 }
 
@@ -102,7 +103,7 @@ export async function getAllCachedCourses(): Promise<CachedCourse[]> {
  */
 export async function createManualCourse(input: ManualCourseInput): Promise<CachedCourse> {
   const ids = await db.courses.toCollection().primaryKeys()
-  const id = nextManualCourseId(ids as number[])
+  const id = nextManualCourseId(ids as Array<string | number>)
   const course = buildManualCourse(input, id)
   const record: CachedCourse = { ...course, cachedAt: new Date().toISOString(), isManual: true }
   await db.courses.put(record)
@@ -110,7 +111,7 @@ export async function createManualCourse(input: ManualCourseInput): Promise<Cach
 }
 
 /** Mark a course as just-played (drives the recently-played carousel). */
-export async function markCoursePlayed(id: number, when = new Date()): Promise<void> {
+export async function markCoursePlayed(id: string, when = new Date()): Promise<void> {
   await db.courses.update(id, { lastPlayedDate: when.toISOString() })
 }
 

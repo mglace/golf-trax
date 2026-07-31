@@ -32,7 +32,7 @@ function tee(name: string, overrides: Partial<ApiTeeBox> = {}): ApiTeeBox {
 
 function course(overrides: Partial<ApiCourse> = {}): ApiCourse {
   return {
-    id: 1,
+    id: '1',
     club_name: 'Pebble Beach Golf Links',
     course_name: 'Pebble Beach Golf Links',
     location: { address: '', city: 'Pebble Beach', state: 'CA', country: 'United States' },

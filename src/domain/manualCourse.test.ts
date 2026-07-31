@@ -52,10 +52,11 @@ describe('validateManualCourse', () => {
 })
 
 describe('nextManualCourseId', () => {
-  it('starts at -1 and steps down below the most-negative id', () => {
-    expect(nextManualCourseId([])).toBe(-1)
-    expect(nextManualCourseId([123, 456])).toBe(-1) // API (positive) ids ignored
-    expect(nextManualCourseId([-1, -2, 500])).toBe(-3)
+  it('starts at manual-1 and steps above the highest existing manual number', () => {
+    expect(nextManualCourseId([])).toBe('manual-1')
+    expect(nextManualCourseId(['yasc0cpx', '34'])).toBe('manual-1') // API (slug) ids ignored
+    expect(nextManualCourseId(['manual-1', 'manual-2', 'yasc0cpx'])).toBe('manual-3')
+    expect(nextManualCourseId([-1, -2])).toBe('manual-1') // legacy negative ids ignored
   })
 })
 
@@ -71,9 +72,9 @@ describe('buildManualCourse', () => {
         teeName: 'White',
         holes: blankHoles(18),
       }),
-      -1,
+      'manual-1',
     )
-    expect(course.id).toBe(-1)
+    expect(course.id).toBe('manual-1')
     expect(course.club_name).toBe('Sandy Pines')
     expect(course.location.city).toBe('Rehoboth')
 
@@ -91,7 +92,7 @@ describe('buildManualCourse', () => {
   })
 
   it('places a 9-hole womens course under tees.female and supports only Front 9', () => {
-    const course = buildManualCourse(input({ gender: 'female', holes: blankHoles(9) }), -2)
+    const course = buildManualCourse(input({ gender: 'female', holes: blankHoles(9) }), 'manual-2')
     expect(course.tees.male).toHaveLength(0)
     expect(course.tees.female).toHaveLength(1)
     const tee = findTee(course, 'female', course.tees.female[0].tee_name)!
@@ -103,7 +104,7 @@ describe('buildManualCourse', () => {
     const holes = blankHoles(9)
     holes[0] = { par: 4, handicap: NaN, yardage: NaN }
     holes[1] = { par: 4, handicap: 2.7, yardage: 315.6 }
-    const course = buildManualCourse(input({ holes }), -1)
+    const course = buildManualCourse(input({ holes }), 'manual-1')
     const [h0, h1] = course.tees.male[0].holes
     expect(h0.handicap).toBe(1) // backfilled to hole number
     expect(h0.yardage).toBe(0)

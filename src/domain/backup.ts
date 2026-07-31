@@ -122,7 +122,7 @@ function validateRound(v: unknown): Round | null {
     updatedAt,
   } = v
   if (typeof id !== 'string' || id === '') return null
-  if (typeof courseId !== 'number') return null
+  if (typeof courseId !== 'string' || courseId === '') return null
   if (typeof courseName !== 'string') return null
   if (typeof clubName !== 'string') return null
   if (gender !== 'male' && gender !== 'female') return null
@@ -169,7 +169,7 @@ function validateRound(v: unknown): Round | null {
 /** Validate a single cached course from imported JSON. */
 function validateCourse(v: unknown): CachedCourse | null {
   if (!isObject(v)) return null
-  if (typeof v.id !== 'number') return null
+  if (typeof v.id !== 'string' || v.id === '') return null
   // `cachedAt` was always written on cache; backfill for resilience.
   return {
     ...(v as unknown as CachedCourse),

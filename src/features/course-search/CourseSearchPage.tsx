@@ -44,7 +44,7 @@ export function CourseSearchPage() {
   // The id currently being enriched+cached before we route to setup. Fetching
   // the full course is a network round-trip, so we surface a spinner on the
   // tapped card and block further taps until it resolves.
-  const [pendingId, setPendingId] = useState<number | null>(null)
+  const [pendingId, setPendingId] = useState<string | null>(null)
   const selectAbort = useRef<AbortController | null>(null)
   // Cancel an in-flight selection if the user navigates away first.
   useEffect(() => () => selectAbort.current?.abort(), [])
@@ -83,7 +83,7 @@ export function CourseSearchPage() {
   // without any extra network calls.
   const cachedCourses = useLiveQuery(() => getAllCachedCourses(), [], [])
   const cachedCoordsById = useMemo(() => {
-    const map = new Map<number, Coords>()
+    const map = new Map<string, Coords>()
     for (const course of cachedCourses) {
       const coords = courseCoords(course)
       if (coords) map.set(course.id, coords)

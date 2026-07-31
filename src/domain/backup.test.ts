@@ -13,7 +13,7 @@ import type { CachedCourse, Round } from '@/db/types'
 function round(overrides: Partial<Round> = {}): Round {
   return {
     id: 'r1',
-    courseId: 1,
+    courseId: '1',
     courseName: 'Pine Ridge',
     clubName: 'Pine Ridge GC',
     gender: 'male',
@@ -31,7 +31,7 @@ function course(overrides: Partial<CachedCourse> = {}): CachedCourse {
   return {
     // ApiCourse fields are spread through; only the ones the app relies on
     // are asserted here, so a minimal shape is fine for the round-trip test.
-    id: 1,
+    id: '1',
     club_name: 'Pine Ridge GC',
     cachedAt: '2026-07-01T12:00:00.000Z',
     ...overrides,
@@ -60,7 +60,7 @@ describe('parseBackup round-trip', () => {
     const { backup, skipped } = parseBackup(text)
     expect(skipped).toEqual({ courses: 0, rounds: 0 })
     expect(backup.data.rounds[0].id).toBe('r1')
-    expect(backup.data.courses[0].id).toBe(1)
+    expect(backup.data.courses[0].id).toBe('1')
     expect(backup.data.profile?.name).toBe('Matt')
   })
 })

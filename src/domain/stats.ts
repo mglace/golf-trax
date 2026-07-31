@@ -150,7 +150,7 @@ export function holeDifficulty(rounds: Round[], minSamples = 2): HoleDifficulty[
 }
 
 export interface CourseStat {
-  courseId: number
+  courseId: string
   courseName: string
   count: number
   avgVsPar18: number | null
@@ -159,7 +159,7 @@ export interface CourseStat {
 
 /** Per-course averages, only for courses with at least `minRounds` rounds. */
 export function courseBreakdown(rounds: Round[], minRounds = 5): CourseStat[] {
-  const byCourse = new Map<number, Round[]>()
+  const byCourse = new Map<string, Round[]>()
   for (const r of rounds) {
     const list = byCourse.get(r.courseId) ?? []
     list.push(r)

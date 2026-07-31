@@ -16,7 +16,7 @@ function makeRound(opts: {
   vsPar: number
   length: RoundLength
   date: string
-  courseId?: number
+  courseId?: string
   courseName?: string
   fairways?: boolean
   putts?: number
@@ -39,7 +39,7 @@ function makeRound(opts: {
   })
   return {
     id: `r${uid++}`,
-    courseId: opts.courseId ?? 1,
+    courseId: opts.courseId ?? '1',
     courseName: opts.courseName ?? 'Test Course',
     clubName: 'Test',
     gender: 'male',
@@ -135,12 +135,12 @@ describe('holeDifficulty', () => {
 describe('courseBreakdown', () => {
   it('includes only courses with enough rounds', () => {
     const many = Array.from({ length: 5 }, (_, i) =>
-      makeRound({ vsPar: 4, length: '18', date: `2026-06-0${i + 1}`, courseId: 7, courseName: 'A' }),
+      makeRound({ vsPar: 4, length: '18', date: `2026-06-0${i + 1}`, courseId: '7', courseName: 'A' }),
     )
-    const few = [makeRound({ vsPar: 2, length: '18', date: '2026-06-10', courseId: 9, courseName: 'B' })]
+    const few = [makeRound({ vsPar: 2, length: '18', date: '2026-06-10', courseId: '9', courseName: 'B' })]
     const stats = courseBreakdown([...many, ...few], 5)
     expect(stats).toHaveLength(1)
-    expect(stats[0]).toMatchObject({ courseId: 7, count: 5 })
+    expect(stats[0]).toMatchObject({ courseId: '7', count: 5 })
   })
 })
 

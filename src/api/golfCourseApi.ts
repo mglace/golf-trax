@@ -112,14 +112,15 @@ export async function searchCourses(query: string, signal?: AbortSignal): Promis
  * caller always gets a real {@link ApiCourse} rather than the envelope (whose
  * `id`/`tees` would be `undefined`).
  */
-export async function getCourseById(id: number, signal?: AbortSignal): Promise<ApiCourse> {
-  const url = DIRECT_MODE ? `${DIRECT_BASE}/v1/courses/${id}` : `/api/courses/${id}`
+export async function getCourseById(id: string, signal?: AbortSignal): Promise<ApiCourse> {
+  const encoded = encodeURIComponent(id)
+  const url = DIRECT_MODE ? `${DIRECT_BASE}/v1/courses/${encoded}` : `/api/courses/${encoded}`
   const data = await getJson<{ course?: ApiCourse } & Partial<ApiCourse>>(url, signal)
   const course = data.course ?? (data as ApiCourse)
-  // A well-formed course always has a numeric id. Guard against a `{ course: null }`
-  // or otherwise error-shaped 200 body being cast to a course with undefined
-  // id/tees (which would poison the cache and break setup).
-  if (!course || typeof course.id !== 'number') {
+  // A well-formed course always has a non-empty id. Guard against a
+  // `{ course: null }` or otherwise error-shaped 200 body being cast to a course
+  // with an undefined id (which would poison the cache and break setup).
+  if (!course || (typeof course.id !== 'string' && typeof course.id !== 'number') || course.id === '') {
     throw new ApiError('unknown', `${SERVICE} returned an unexpected course response.`)
   }
   return course

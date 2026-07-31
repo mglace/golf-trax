@@ -79,14 +79,32 @@ export function isManualCourseValid(input: ManualCourseInput): boolean {
   return Object.keys(validateManualCourse(input)).length === 0
 }
 
+/** Prefix marking a locally-created (hand-entered) course id. */
+export const MANUAL_ID_PREFIX = 'manual-'
+
 /**
- * The next id for a manual course: one below the most-negative existing id
- * (starting at -1). Monotonic and collision-free against both API ids (positive)
- * and other manual courses.
+ * Whether an id belongs to a local manual course. Accepts a legacy negative
+ * NUMBER id too — early builds assigned manual courses negative integers before
+ * ids became opaque strings — so pre-existing manual courses keep working.
  */
-export function nextManualCourseId(existingIds: number[]): number {
-  const min = existingIds.reduce((m, id) => (id < m ? id : m), 0)
-  return min - 1
+export function isManualCourseId(id: string | number): boolean {
+  if (typeof id === 'number') return id < 0
+  return id.startsWith(MANUAL_ID_PREFIX)
+}
+
+/**
+ * The next id for a manual course: `manual-N`, one above the highest existing
+ * manual number (starting at `manual-1`). Collision-free against API ids (opaque
+ * slugs) and legacy negative-number manual ids, which are ignored here.
+ */
+export function nextManualCourseId(existingIds: Array<string | number>): string {
+  let max = 0
+  for (const id of existingIds) {
+    if (typeof id !== 'string' || !id.startsWith(MANUAL_ID_PREFIX)) continue
+    const n = Number(id.slice(MANUAL_ID_PREFIX.length))
+    if (Number.isInteger(n) && n > max) max = n
+  }
+  return `${MANUAL_ID_PREFIX}${max + 1}`
 }
 
 function sanitizeHole(h: ManualHoleInput, index: number): ApiHole {
@@ -104,7 +122,7 @@ function sanitizeHole(h: ManualHoleInput, index: number): ApiHole {
  * single tee box carries the entered holes; unknown ratings are 0 (the UI shows
  * these as unavailable rather than a bogus rating).
  */
-export function buildManualCourse(input: ManualCourseInput, id: number): ApiCourse {
+export function buildManualCourse(input: ManualCourseInput, id: string): ApiCourse {
   const holes = input.holes.map(sanitizeHole)
   const parTotal = holes.reduce((sum, h) => sum + h.par, 0)
   const totalYards = holes.reduce((sum, h) => sum + h.yardage, 0)
