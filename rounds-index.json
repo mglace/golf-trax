@@ -1,0 +1,12 @@
+{
+  "indexingMode": "consistent",
+  "automatic": true,
+  "includedPaths": [{ "path": "/*" }],
+  "excludedPaths": [{ "path": "/\"_etag\"/?" }],
+  "compositeIndexes": [
+    [
+      { "path": "/serverTs", "order": "ascending" },
+      { "path": "/id", "order": "ascending" }
+    ]
+  ]
+}
