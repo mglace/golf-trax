@@ -23,7 +23,7 @@ function ConfiguredAuth({ children }: { children: ReactNode }) {
     isAuthenticated: a0.isAuthenticated,
     userId: a0.user?.sub ?? null,
     email: a0.user?.email ?? null,
-    login: () => void a0.loginWithRedirect(),
+    login: () => void a0.loginWithRedirect({ authorizationParams: { connection: 'email' } }),
     logout: () => void a0.logout({ logoutParams: { returnTo: window.location.origin } }),
     getToken: async () => {
       try {
