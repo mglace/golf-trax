@@ -102,6 +102,17 @@ describe('sortCoursesByDistance', () => {
     const courses = [course(1, 38.73, -75.09), course(2, 38.73, -75.09)]
     expect(sortCoursesByDistance(courses, origin).map((r) => r.course.id)).toEqual([1, 2])
   })
+
+  it('returns an empty array for no courses', () => {
+    expect(sortCoursesByDistance([], origin)).toEqual([])
+  })
+
+  it('preserves original order with null distances when nothing is located', () => {
+    const courses = [course(1), course(2, 0, 0), course(3)]
+    const ranked = sortCoursesByDistance(courses, origin)
+    expect(ranked.map((r) => r.course.id)).toEqual([1, 2, 3])
+    expect(ranked.every((r) => r.distanceMeters === null)).toBe(true)
+  })
 })
 
 describe('formatMiles', () => {

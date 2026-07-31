@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCourseSearch } from './useCourseSearch'
 import { useGeolocation } from './useGeolocation'
@@ -31,6 +31,8 @@ export function CourseSearchPage() {
   const { query, setQuery, status, results, error, retry } = useCourseSearch()
   // Shared across "Near you" and search results so the user only grants location once.
   const geo = useGeolocation()
+  // Lets a located user switch back to the API's default order (and back again).
+  const [distanceSortEnabled, setDistanceSortEnabled] = useState(true)
 
   async function handleSelect(course: ApiCourse) {
     // Ensure the chosen course is cached before we route to the setup screen,
@@ -40,13 +42,15 @@ export function CourseSearchPage() {
   }
 
   const showEmpty = status === 'success' && results.length === 0
+  const sortingByDistance = geo.coords !== null && distanceSortEnabled
 
-  // When the user has shared their location, rank results nearest-first; courses
-  // with no usable coordinates ((0,0) or missing) sink to the bottom in API order.
+  // When the user has shared their location and hasn't opted out, rank results
+  // nearest-first; courses with no usable coordinates ((0,0) or missing) sink to
+  // the bottom in API order.
   const rankedResults = useMemo<RankedCourse[]>(() => {
-    if (geo.coords) return sortCoursesByDistance(results, geo.coords)
+    if (sortingByDistance && geo.coords) return sortCoursesByDistance(results, geo.coords)
     return results.map((course) => ({ course, distanceMeters: null }))
-  }, [results, geo.coords])
+  }, [results, geo.coords, sortingByDistance])
 
   return (
     <div className="py-4">
@@ -117,12 +121,22 @@ export function CourseSearchPage() {
           <>
             {geo.status !== 'unsupported' && (
               <div className="flex items-center justify-between px-1">
-                <p className="text-xs text-slate-500">
-                  {geo.coords
+                <p role="status" aria-live="polite" className="text-xs text-slate-500">
+                  {sortingByDistance
                     ? 'Sorted by distance'
                     : `${results.length} ${results.length === 1 ? 'result' : 'results'}`}
                 </p>
-                {!geo.coords && (
+                {geo.coords ? (
+                  // Already located: toggle distance sorting on/off without re-prompting.
+                  <button
+                    type="button"
+                    onClick={() => setDistanceSortEnabled((on) => !on)}
+                    className="inline-flex items-center gap-1 text-sm font-semibold text-fairway-700 active:text-fairway-800"
+                  >
+                    <MapPinIcon className="h-4 w-4" aria-hidden />
+                    {distanceSortEnabled ? 'Show default order' : 'Sort by distance'}
+                  </button>
+                ) : (
                   <button
                     type="button"
                     onClick={() => geo.request()}
@@ -146,6 +160,11 @@ export function CourseSearchPage() {
             {geo.status === 'denied' && !geo.coords && (
               <p className="px-1 text-xs text-slate-500">
                 Location access is blocked. Allow it in your browser settings to sort by distance.
+              </p>
+            )}
+            {geo.status === 'error' && !geo.coords && (
+              <p className="px-1 text-xs text-slate-500">
+                Couldn’t get your location. Please try again.
               </p>
             )}
             <ul className="space-y-2">
