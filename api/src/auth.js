@@ -82,11 +82,21 @@ function requireAuth(handler) {
       }
       // Don't leak token internals; a bad/expired token is a routine 401.
       context.warn(`JWT validation failed: ${err && (err.code || err.message)}`)
+      let recvHeader
+      try {
+        recvHeader = JSON.parse(Buffer.from(match[1].split('.')[0], 'base64').toString('utf8'))
+      } catch (e) {
+        recvHeader = { decodeErr: String(e), rawPrefix: match[1].slice(0, 12) }
+      }
       return json(401, {
         error: 'Invalid or expired token.',
         _dbg: 'AUTHDBG-verifyfail',
         _code: err && err.code,
         _msg: err && err.message,
+        _recvAlg: recvHeader && recvHeader.alg,
+        _recvTyp: recvHeader && recvHeader.typ,
+        _tokLen: match[1].length,
+        _segs: match[1].split('.').length,
       })
     }
 
