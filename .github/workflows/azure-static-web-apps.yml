@@ -38,6 +38,12 @@ jobs:
           # key lives as the GOLF_API_KEY application setting on the SWA (set it
           # in the Portal or with `az staticwebapp appsettings set`).
           NODE_VERSION: "20"
+          # Public Auth0 values (no client secret in a passwordless SPA) — must
+          # be present at build time or Vite inlines them as undefined and the
+          # sync UI stays hidden (see src/auth/authConfig.ts).
+          VITE_AUTH0_DOMAIN: dev-t2f04o583lwuw2ii.us.auth0.com
+          VITE_AUTH0_CLIENT_ID: xRXVIPCv3eOMp3Frv2gsmrqFciRolSY0
+          VITE_AUTH0_AUDIENCE: https://api.golftrax.app
 
   close_pull_request:
     if: github.event_name == 'pull_request' && github.event.action == 'closed'
