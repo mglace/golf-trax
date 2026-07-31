@@ -70,7 +70,7 @@ function requireAuth(handler) {
   return async (request, context) => {
     const header = request.headers.get('authorization') || ''
     const match = /^Bearer (.+)$/i.exec(header.trim())
-    if (!match) return json(401, { error: 'Missing bearer token.' })
+    if (!match) return json(401, { error: 'Missing bearer token.', _dbg: 'AUTHDBG-nohdr' })
 
     let payload
     try {
@@ -82,7 +82,12 @@ function requireAuth(handler) {
       }
       // Don't leak token internals; a bad/expired token is a routine 401.
       context.warn(`JWT validation failed: ${err && (err.code || err.message)}`)
-      return json(401, { error: 'Invalid or expired token.' })
+      return json(401, {
+        error: 'Invalid or expired token.',
+        _dbg: 'AUTHDBG-verifyfail',
+        _code: err && err.code,
+        _msg: err && err.message,
+      })
     }
 
     const userId = payload.sub
