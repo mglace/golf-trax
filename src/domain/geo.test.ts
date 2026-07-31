@@ -5,6 +5,7 @@ import {
   haversineMeters,
   nearbyCourses,
   sortCoursesByDistance,
+  withKnownCoords,
 } from './geo'
 import type { ApiCourse } from '@/api/types'
 
@@ -112,6 +113,37 @@ describe('sortCoursesByDistance', () => {
     const ranked = sortCoursesByDistance(courses, origin)
     expect(ranked.map((r) => r.course.id)).toEqual([1, 2, 3])
     expect(ranked.every((r) => r.distanceMeters === null)).toBe(true)
+  })
+})
+
+describe('withKnownCoords', () => {
+  it('fills missing coordinates from the lookup by course id', () => {
+    const [filled] = withKnownCoords([course(1)], new Map([[1, { lat: 38.7, lng: -75.1 }]]))
+    expect(courseCoords(filled)).toEqual({ lat: 38.7, lng: -75.1 })
+  })
+
+  it('leaves a course that already has coordinates untouched', () => {
+    const original = course(1, 40.0, -74.0)
+    const [result] = withKnownCoords([original], new Map([[1, { lat: 38.7, lng: -75.1 }]]))
+    expect(result).toBe(original) // same reference — not rebuilt
+  })
+
+  it('leaves a course unchanged when the lookup has no entry for it', () => {
+    const original = course(1)
+    const [result] = withKnownCoords([original], new Map())
+    expect(result).toBe(original)
+    expect(courseCoords(result)).toBeNull()
+  })
+
+  it('makes lean results rankable by sortCoursesByDistance', () => {
+    const origin = { lat: 38.72, lng: -75.08 }
+    const results = [course(1), course(2)] // lean: no coords
+    const coordsById = new Map([[2, { lat: 38.73, lng: -75.09 }]]) // only #2 is known
+    const ranked = sortCoursesByDistance(withKnownCoords(results, coordsById), origin)
+    // #2 has coords → ranked first; #1 stays unlocated at the bottom.
+    expect(ranked.map((r) => r.course.id)).toEqual([2, 1])
+    expect(ranked[0].distanceMeters).toBeGreaterThan(0)
+    expect(ranked[1].distanceMeters).toBeNull()
   })
 })
 

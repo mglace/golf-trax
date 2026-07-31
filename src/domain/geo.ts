@@ -105,6 +105,29 @@ export function sortCoursesByDistance<T extends ApiCourse>(
   ]
 }
 
+/**
+ * Fill in coordinates missing from lean courses (e.g. `/v1/search` results,
+ * which omit lat/lng) using coordinates already known for that course id —
+ * typically full-detail records cached from a previous lookup. A course that
+ * already has usable coordinates, or has none available in `coordsById`, is
+ * returned unchanged. Lets {@link sortCoursesByDistance} rank the courses the
+ * user has opened before, without any extra network calls.
+ */
+export function withKnownCoords<T extends ApiCourse>(
+  courses: T[],
+  coordsById: Map<number, Coords>,
+): T[] {
+  return courses.map((course) => {
+    if (courseCoords(course)) return course
+    const coords = coordsById.get(course.id)
+    if (!coords) return course
+    return {
+      ...course,
+      location: { ...course.location, latitude: coords.lat, longitude: coords.lng },
+    }
+  })
+}
+
 /** Human-friendly distance in miles: "0.4 mi", "2.3 mi", "17 mi". */
 export function formatMiles(meters: number): string {
   const miles = meters / METERS_PER_MILE

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useLiveQuery } from 'dexie-react-hooks'
 import { useCourseSearch } from './useCourseSearch'
 import { useGeolocation } from './useGeolocation'
 import { SearchBar } from './SearchBar'
@@ -16,8 +17,14 @@ import {
   WifiOffIcon,
 } from '@/components/icons'
 import { useOnlineStatus } from '@/hooks/useOnlineStatus'
-import { cacheFullCourse } from '@/db/coursesRepo'
-import { sortCoursesByDistance, type RankedCourse } from '@/domain/geo'
+import { cacheFullCourse, getAllCachedCourses } from '@/db/coursesRepo'
+import {
+  courseCoords,
+  sortCoursesByDistance,
+  withKnownCoords,
+  type Coords,
+  type RankedCourse,
+} from '@/domain/geo'
 import type { ApiCourse } from '@/api/types'
 
 /**
@@ -60,13 +67,30 @@ export function CourseSearchPage() {
   const showEmpty = status === 'success' && results.length === 0
   const sortingByDistance = geo.coords !== null && distanceSortEnabled
 
+  // Coordinates we already hold locally, keyed by course id. `/v1/search` results
+  // are lean (no lat/lng), but a course the user has opened before is cached with
+  // full detail — including coordinates — so we can still rank those by distance
+  // without any extra network calls.
+  const cachedCourses = useLiveQuery(() => getAllCachedCourses(), [], [])
+  const cachedCoordsById = useMemo(() => {
+    const map = new Map<number, Coords>()
+    for (const course of cachedCourses) {
+      const coords = courseCoords(course)
+      if (coords) map.set(course.id, coords)
+    }
+    return map
+  }, [cachedCourses])
+
   // When the user has shared their location and hasn't opted out, rank results
-  // nearest-first; courses with no usable coordinates ((0,0) or missing) sink to
-  // the bottom in API order.
+  // nearest-first (borrowing cached coordinates where a lean result has none);
+  // courses with no coordinates available sink to the bottom in API order.
   const rankedResults = useMemo<RankedCourse[]>(() => {
-    if (sortingByDistance && geo.coords) return sortCoursesByDistance(results, geo.coords)
+    if (sortingByDistance && geo.coords) {
+      return sortCoursesByDistance(withKnownCoords(results, cachedCoordsById), geo.coords)
+    }
     return results.map((course) => ({ course, distanceMeters: null }))
-  }, [results, geo.coords, sortingByDistance])
+  }, [results, geo.coords, sortingByDistance, cachedCoordsById])
+  const hasDistances = rankedResults.some((r) => r.distanceMeters !== null)
 
   return (
     <div className="py-4">
@@ -138,7 +162,7 @@ export function CourseSearchPage() {
             {geo.status !== 'unsupported' && (
               <div className="flex items-center justify-between px-1">
                 <p role="status" aria-live="polite" className="text-xs text-slate-500">
-                  {sortingByDistance
+                  {sortingByDistance && hasDistances
                     ? 'Sorted by distance'
                     : `${results.length} ${results.length === 1 ? 'result' : 'results'}`}
                 </p>
