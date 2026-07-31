@@ -41,6 +41,11 @@ pnpm-debug.log*
 # Test / coverage
 coverage
 
+# Playwright
+/test-results
+/playwright-report
+/playwright/.cache
+
 # Azure Functions (api) — deps installed by Oryx; secrets never committed
 api/node_modules
 api/local.settings.json
