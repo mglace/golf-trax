@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useCourse } from './useCourse'
 import { TeeSelect, type SelectedTee } from './TeeSelect'
 import { ApiErrorMessage } from '@/components/ApiErrorMessage'
@@ -8,6 +8,7 @@ import { formatCourseName, formatLocation, findTee } from '@/domain/course'
 import { availableRoundLengths, ROUND_LENGTH_LABEL } from '@/domain/round'
 import { createDraftRound } from '@/db/roundsRepo'
 import type { RoundLength } from '@/db/types'
+import type { ApiCourse } from '@/api/types'
 
 /**
  * Course setup: pick a tee box and round length, then start the round (creates
@@ -15,9 +16,16 @@ import type { RoundLength } from '@/db/types'
  */
 export function CourseSetupPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { courseId } = useParams<{ courseId: string }>()
   const id = courseId ? Number(courseId) : undefined
-  const { status, course, error, retry } = useCourse(id)
+  // The selection flow passes the course it just fetched+cached (tees included)
+  // so we can render it directly instead of re-resolving it by id. A plain
+  // deep-link carries no navigation state and resolves from cache/API; a refresh
+  // replays this same state (history.state survives reloads), which is fine —
+  // seedCourse only accepts it when it's for this id and has tee data.
+  const preloaded = (location.state as { course?: ApiCourse } | null)?.course
+  const { status, course, error, retry } = useCourse(id, preloaded)
 
   const [tee, setTee] = useState<SelectedTee | null>(null)
   const [roundLength, setRoundLength] = useState<RoundLength | null>(null)

@@ -65,7 +65,13 @@ export function CourseSearchPage() {
     // would find nothing cached and 404 on setup ("We couldn't find that course").
     const cached = await cacheFullCourse(course, controller.signal)
     if (controller.signal.aborted) return
-    navigate(`/new/${cached.id}`)
+    // Hand the resolved course straight to setup via navigation state. The setup
+    // screen then renders THIS object instead of re-reading it back from the
+    // cache by id — the re-read is the step that dead-ends at "We couldn't find
+    // that course" if the cache lookup misses (e.g. the detail endpoint
+    // canonicalized to a different id) or a re-fetch 404s. A plain deep-link
+    // carries no navigation state and still resolves by id.
+    navigate(`/new/${cached.id}`, { state: { course: cached } })
   }
 
   const showEmpty = status === 'success' && results.length === 0
