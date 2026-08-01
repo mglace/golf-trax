@@ -80,21 +80,10 @@ export function SignInDialog({ onClose, onStart, onVerify }: SignInDialogProps) 
         role="dialog"
         aria-modal="true"
         aria-label="Sign in to sync"
-        className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl"
+        className="relative w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between">
-          <h2 className="text-base font-bold text-slate-900">Sign in to sync</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            aria-label="Close"
-            className="-m-1 rounded-lg p-1 text-slate-400 active:bg-slate-100 disabled:opacity-40"
-          >
-            <XIcon className="h-5 w-5" aria-hidden />
-          </button>
-        </div>
+        <h2 className="pr-8 text-base font-bold text-slate-900">Sign in to sync</h2>
 
         {step === 'email' ? (
           <form onSubmit={submitEmail} className="mt-3">
@@ -177,6 +166,18 @@ export function SignInDialog({ onClose, onStart, onVerify }: SignInDialogProps) 
             </button>
           </form>
         )}
+
+        {/* Rendered last so the focus trap lands on the email/code input, not
+            Close (useDialogFocus focuses the first focusable in DOM order). */}
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={busy}
+          aria-label="Close"
+          className="absolute right-4 top-4 rounded-lg p-1 text-slate-400 active:bg-slate-100 disabled:opacity-40"
+        >
+          <XIcon className="h-5 w-5" aria-hidden />
+        </button>
       </div>
     </div>
   )

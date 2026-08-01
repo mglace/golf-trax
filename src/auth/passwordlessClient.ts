@@ -68,8 +68,9 @@ function toSession(token: TokenResponse, prevRefresh: string | null): StoredSess
   return {
     accessToken: token.access_token,
     idToken: token.id_token,
-    // A refresh response may omit refresh_token when rotation is off; keep the
-    // one we already hold in that case.
+    // With refresh-token rotation on (what PHASE2-SETUP.md mandates) each
+    // refresh returns a fresh refresh_token; fall back to the one we already
+    // hold if a response omits it (e.g. rotation disabled).
     refreshToken: token.refresh_token ?? prevRefresh,
     expiresAt: Date.now() + token.expires_in * 1000,
   }
@@ -172,17 +173,45 @@ export async function verifyEmailCode(
 }
 
 /**
- * Trade the refresh token for a fresh access token. Returns the renewed session
- * on success. Returns null when renewal can't happen:
- *  - a network failure (offline) → the stored session is KEPT ("sync paused");
- *  - a 4xx (refresh token revoked/expired) → the session is CLEARED (must
- *    re-authenticate).
+ * Best-effort, fire-and-forget revocation of a refresh token at Auth0 (called on
+ * sign-out). Ending the server session must not block a local — possibly
+ * offline — logout, so failures are ignored; the local session is cleared
+ * regardless by the caller. Without this the refresh token stays valid at Auth0
+ * for its full lifetime after sign-out.
  */
-async function refreshSession(
+export function revokeRefreshToken(config: PasswordlessConfig, refreshToken: string): void {
+  void fetch(`https://${config.domain}/oauth/revoke`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: config.clientId, token: refreshToken }),
+  }).catch(() => {
+    // Offline or rejected — nothing to do; local sign-out still proceeds.
+  })
+}
+
+/**
+ * The outcome of a refresh attempt:
+ *  - `renewed`  — a fresh session (persisted);
+ *  - `retry`    — transient (offline, 429 rate-limit, 5xx): KEEP the session
+ *                 and try again later ("sync paused");
+ *  - `cleared`  — permanent (refresh token revoked/expired): the session has
+ *                 been dropped and the user must re-authenticate.
+ */
+type RefreshOutcome =
+  | { status: 'renewed'; session: StoredSession }
+  | { status: 'retry' }
+  | { status: 'cleared' }
+
+// Single-flight guard: on reload the mount effect and SyncManager's first sync
+// can both hit an expired token and refresh concurrently. With rotation on, a
+// second POST with the same refresh token is reuse-detection at Auth0 and
+// revokes the whole token family — so concurrent callers must share one request.
+let pendingRefresh: { token: string; promise: Promise<RefreshOutcome> } | null = null
+
+async function performRefresh(
   config: PasswordlessConfig,
   session: StoredSession,
-): Promise<StoredSession | null> {
-  if (!session.refreshToken) return null
+): Promise<RefreshOutcome> {
   let res: Response
   try {
     res = await fetch(`https://${config.domain}/oauth/token`, {
@@ -196,26 +225,48 @@ async function refreshSession(
     })
   } catch {
     // Offline / transient network error — keep the session, resume later.
-    return null
+    return { status: 'retry' }
   }
   if (!res.ok) {
-    // A rejected refresh token is permanent; drop the session so the UI falls
-    // back to signed-out rather than looping on a dead token.
-    if (res.status >= 400 && res.status < 500) clearSession()
-    return null
+    // Only genuinely unrecoverable auth failures are permanent. A 429 (Auth0
+    // tenant rate limit) or a 5xx is transient — keep the session and retry, or
+    // a rate-limited reload would sign the user out.
+    if (res.status === 400 || res.status === 401 || res.status === 403) {
+      clearSession()
+      return { status: 'cleared' }
+    }
+    return { status: 'retry' }
   }
   const next = toSession((await res.json()) as TokenResponse, session.refreshToken)
   saveSession(next)
-  return next
+  return { status: 'renewed', session: next }
+}
+
+function refreshSession(
+  config: PasswordlessConfig,
+  session: StoredSession,
+): Promise<RefreshOutcome> {
+  const token = session.refreshToken
+  // No refresh token → we can't renew silently; keep the session paused rather
+  // than forcing a sign-out (offline_access simply wasn't granted).
+  if (!token) return Promise.resolve({ status: 'retry' })
+  if (pendingRefresh && pendingRefresh.token === token) return pendingRefresh.promise
+  const promise = performRefresh(config, session).finally(() => {
+    if (pendingRefresh && pendingRefresh.token === token) pendingRefresh = null
+  })
+  pendingRefresh = { token, promise }
+  return promise
 }
 
 /**
  * Resolve a currently-valid access token, refreshing if needed. Returns the
- * (possibly renewed or cleared) session alongside the token so the caller can
- * mirror it into React state.
+ * session alongside the token so the caller can mirror it into React state:
+ *  - renewed → the fresh session;
+ *  - transient failure (offline/429/5xx) → the SAME in-memory session (paused);
+ *  - permanent failure (revoked/expired) → null (signed out).
  *
- * `token` is null when no valid token is available (signed out, or offline with
- * an expired one) — callers treat that as "sync paused", never an error.
+ * `token` is null whenever no valid token is available — callers treat that as
+ * "sync paused", never an error.
  */
 export async function getValidAccessToken(
   config: PasswordlessConfig,
@@ -225,11 +276,17 @@ export async function getValidAccessToken(
   if (Date.now() < session.expiresAt - EXPIRY_SKEW_MS) {
     return { token: session.accessToken, session }
   }
-  const refreshed = await refreshSession(config, session)
-  if (refreshed) return { token: refreshed.accessToken, session: refreshed }
-  // Refresh failed. If it was unrecoverable the session is now cleared; reload
-  // to reflect that. If it was just offline, loadSession() returns it unchanged.
-  return { token: null, session: loadSession() }
+  const outcome = await refreshSession(config, session)
+  if (outcome.status === 'renewed') {
+    return { token: outcome.session.accessToken, session: outcome.session }
+  }
+  if (outcome.status === 'cleared') return { token: null, session: null }
+  // Transient: hand back the same session object we were given (never
+  // loadSession(), which is null when the write was silently dropped, e.g.
+  // Safari private mode) so a working session isn't lost on the first offline
+  // refresh. Returning the identical reference also avoids a needless
+  // setSession/context churn in the caller.
+  return { token: null, session }
 }
 
 /**

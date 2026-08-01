@@ -4,6 +4,7 @@ import {
   decodeJwt,
   getValidAccessToken,
   loadSession,
+  revokeRefreshToken,
   saveSession,
   startEmailCode,
   verifyEmailCode,
@@ -189,18 +190,41 @@ describe('getValidAccessToken', () => {
     expect(loadSession()?.accessToken).toBe('AT2')
   })
 
-  it('keeps the session but pauses when refresh fails on the network (offline)', async () => {
+  it('keeps the same session object (not loadSession) when refresh fails offline', async () => {
+    // saveSession is a no-op here (no persistence) to mimic Safari private mode,
+    // so loadSession() would be null — the offline path must NOT surface that.
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
+    const expired = session({ expiresAt: Date.now() - 1000 })
+
+    const { token, session: next } = await getValidAccessToken(CONFIG, expired)
+
+    expect(token).toBeNull()
+    expect(next).toBe(expired) // the exact in-memory session, preserved for retry
+  })
+
+  it('keeps the session on a 429 rate-limit instead of signing out', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 429 })))
     const expired = session({ expiresAt: Date.now() - 1000 })
     saveSession(expired)
 
     const { token, session: next } = await getValidAccessToken(CONFIG, expired)
 
     expect(token).toBeNull()
-    expect(next).toEqual(expired) // session preserved for a later retry
+    expect(next).toBe(expired) // preserved
+    expect(loadSession()).not.toBeNull() // NOT cleared
   })
 
-  it('clears the session when the refresh token is rejected (4xx)', async () => {
+  it('keeps the session on a 5xx server error', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 503 })))
+    const expired = session({ expiresAt: Date.now() - 1000 })
+
+    const { token, session: next } = await getValidAccessToken(CONFIG, expired)
+
+    expect(token).toBeNull()
+    expect(next).toBe(expired)
+  })
+
+  it('clears the session when the refresh token is rejected (403 invalid_grant)', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
@@ -217,14 +241,60 @@ describe('getValidAccessToken', () => {
     expect(loadSession()).toBeNull() // permanently dropped
   })
 
-  it('cannot refresh without a refresh token', async () => {
+  it('coalesces concurrent refreshes into one request (rotation reuse-safe)', async () => {
+    let release!: (r: Response) => void
+    const fetchMock = vi.fn().mockImplementation(
+      () => new Promise<Response>((resolve) => (release = resolve)),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const expired = session({ expiresAt: Date.now() - 1000 })
+
+    // Two callers hit the expired token at once (mount effect + first sync).
+    const p1 = getValidAccessToken(CONFIG, expired)
+    const p2 = getValidAccessToken(CONFIG, expired)
+    release(
+      new Response(
+        JSON.stringify({ access_token: 'AT2', id_token: 'IT2', expires_in: 3600 }),
+        { status: 200 },
+      ),
+    )
+    const [r1, r2] = await Promise.all([p1, p2])
+
+    expect(fetchMock).toHaveBeenCalledTimes(1) // shared, not two POSTs
+    expect(r1.token).toBe('AT2')
+    expect(r2.token).toBe('AT2')
+  })
+
+  it('cannot refresh without a refresh token (stays paused, not signed out)', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
     const expired = session({ expiresAt: Date.now() - 1000, refreshToken: null })
 
-    const { token } = await getValidAccessToken(CONFIG, expired)
+    const { token, session: next } = await getValidAccessToken(CONFIG, expired)
 
     expect(token).toBeNull()
+    expect(next).toBe(expired) // kept
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('revokeRefreshToken', () => {
+  it('POSTs the token to /oauth/revoke, fire-and-forget', () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    revokeRefreshToken(CONFIG, 'RT')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://auth.example.com/oauth/revoke',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body).toMatchObject({ client_id: 'client123', token: 'RT' })
+  })
+
+  it('does not throw when revocation fails (offline)', () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
+    expect(() => revokeRefreshToken(CONFIG, 'RT')).not.toThrow()
   })
 })

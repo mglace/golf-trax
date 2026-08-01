@@ -12,6 +12,7 @@
  * caller treats that as "sync paused".
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { clearAccountRounds } from '@/sync/syncClient'
 import type { SyncConfig } from './authConfig'
 import { AuthContext, type AuthValue } from './authContext'
 import { SignInDialog } from './SignInDialog'
@@ -20,6 +21,7 @@ import {
   decodeJwt,
   getValidAccessToken,
   loadSession,
+  revokeRefreshToken,
   startEmailCode,
   verifyEmailCode,
   type StoredSession,
@@ -41,37 +43,47 @@ export default function PasswordlessRoot({
   const sessionRef = useRef(session)
   sessionRef.current = session
 
-  // On mount, freshen a restored session's access token (or refresh it) so a
-  // reload resumes signed-in. Offline keeps the session; the token resolves
-  // lazily on the next getToken.
-  useEffect(() => {
-    if (!sessionRef.current) return
-    let cancelled = false
-    void (async () => {
-      const { session: next } = await getValidAccessToken(config, sessionRef.current)
-      if (!cancelled) {
-        setSession(next)
-        setIsLoading(false)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [config])
-
   const getToken = useCallback(async () => {
-    const { token, session: next } = await getValidAccessToken(config, sessionRef.current)
-    // Mirror a refreshed/cleared session so the UI + SyncManager stay in step.
-    if (next !== sessionRef.current) setSession(next)
+    const prev = sessionRef.current
+    const { token, session: next } = await getValidAccessToken(config, prev)
+    if (next !== prev) {
+      // An involuntary sign-out (refresh token revoked/expired → next is null
+      // while we had a session) must run the same §11.5 cleanup as the explicit
+      // Sign out, or the previous account's rounds linger in IndexedDB while the
+      // UI shows signed-out — visible to the next person on a shared device.
+      if (next === null && prev !== null) await clearAccountRounds()
+      setSession(next)
+    }
     return token
   }, [config])
 
+  // On mount, freshen a restored session's access token (or refresh it) so a
+  // reload resumes signed-in. Routed through getToken so a revoked token at
+  // mount triggers the same cleanup. Offline keeps the session; the token
+  // resolves lazily later.
+  useEffect(() => {
+    if (!sessionRef.current) return
+    let cancelled = false
+    void getToken().finally(() => {
+      if (!cancelled) setIsLoading(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [getToken])
+
   const login = useCallback(() => setDialogOpen(true), [])
 
+  // Sign out: revoke the refresh token at Auth0 (best-effort/offline-tolerant),
+  // clear this device's account-owned rounds (§11.5), then drop the session.
   const logout = useCallback(() => {
-    clearSession()
-    setSession(null)
-  }, [])
+    const current = sessionRef.current
+    if (current?.refreshToken) revokeRefreshToken(config, current.refreshToken)
+    void clearAccountRounds().finally(() => {
+      clearSession()
+      setSession(null)
+    })
+  }, [config])
 
   // Account id (the JWT `sub`, matching what the server derives) and email for
   // display, decoded — never trusted — from the tokens.

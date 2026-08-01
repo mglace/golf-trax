@@ -10,7 +10,6 @@
  */
 import { useAuth } from '@/auth/authContext'
 import { useSyncStore, type SyncStatus } from '@/sync/syncStore'
-import { clearAccountRounds } from '@/sync/syncClient'
 import { SpinnerIcon } from '@/components/icons'
 
 const STATUS_TEXT: Record<SyncStatus, string> = {
@@ -44,13 +43,11 @@ export function AccountSection() {
   // Local-only build: no account surface at all.
   if (!isConfigured) return null
 
-  // Sign-out clears this device's account-owned rounds before redirecting, so a
-  // shared device never leaks one account's synced data into the next session
-  // (§11.5). Local-only rounds are kept; account rounds re-pull on next sign-in.
-  async function handleSignOut() {
-    await clearAccountRounds()
-    logout()
-  }
+  // Sign-out cleanup (revoke the token, clear this device's account-owned
+  // rounds so a shared device never leaks one account's synced data into the
+  // next session — §11.5) lives in the provider's `logout`, which is shared with
+  // the involuntary sign-out path. Local-only rounds are kept; account rounds
+  // re-pull on next sign-in.
 
   return (
     <section
@@ -78,7 +75,7 @@ export function AccountSection() {
           </div>
           <button
             type="button"
-            onClick={handleSignOut}
+            onClick={logout}
             className="mt-4 flex min-h-[48px] w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-700 active:bg-slate-50"
           >
             Sign out
