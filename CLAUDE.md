@@ -28,6 +28,9 @@ npm run typecheck      # tsc -b --noEmit
 npm run test           # vitest run (one-shot)
 npm run test:watch     # vitest watch
 npx vitest run src/domain/sync.test.ts   # a single test file
+npm run test:e2e       # playwright test (e2e/, Chromium)
+npm run test:e2e:ui    # playwright --ui
+npm run test:e2e:report  # open the last HTML report
 ```
 
 API (Azure Functions — separate workspace):
@@ -38,13 +41,27 @@ npm --prefix api test      # node --test (Node's built-in runner, NOT vitest)
 npm --prefix api start     # func start (needs Azure Functions Core Tools)
 ```
 
+To exercise **proxy mode** locally (SPA + functions behind one origin, the way
+production runs), use the SWA emulator instead of `npm run dev` alone:
+
+```bash
+npm run swa:start          # swa start — fronts the Vite dev server + api/
+```
+
 Vitest is deliberately scoped to `src/**/*.{test,spec}.{ts,tsx}` (see
 `vite.config.ts`) so it never tries to run the api workspace's Node-native tests.
-There is no combined test command — run both when touching shared logic.
+There is no combined test command — the three suites (Vitest, `api/`'s
+`node --test`, Playwright) are separate invocations. Run both unit suites when
+touching shared logic; `ci.yml` is what runs all three together.
 
-**CI does not gate on lint/test.** The only GitHub Actions workflow
-(`.github/workflows/azure-static-web-apps.yml`) builds and deploys to Azure SWA;
-it does not run the linter, typecheck, or tests. Run those locally before pushing.
+**Two GitHub Actions workflows**, both on push/PR to `main`:
+
+- `ci.yml` — the quality gate. `unit` job runs lint → typecheck → Vitest →
+  `npm test --prefix api`; `e2e` job runs Playwright (Chromium only) and uploads
+  the HTML report as an artifact. Runs on the same ref are cancel-in-progress.
+- `azure-static-web-apps.yml` — builds and deploys to Azure SWA. It does **not**
+  depend on `ci.yml`, so a red CI run does not block a deploy. Run the checks
+  locally before pushing to `main`.
 
 Path alias: `@/` → `src/` (configured in both `vite.config.ts` and `tsconfig`).
 
@@ -98,8 +115,11 @@ server-stamped `version`, delete-wins, tombstones, cursor staleness) exist in
 - `src/domain/sync.ts` (client, TypeScript)
 - `api/src/sync-core.js` (server, JavaScript)
 
-`src/domain/sync.test.ts` is the **shared specification** for both. If you change
-a rule in one port, change the other and update that test.
+`src/domain/sync.test.ts` is the **shared specification** for both, and
+`api/test/sync-core.test.js` mirrors it as a parity guard so the JS port can't
+silently drift. If you change a rule in one port, change the other and update
+**both** test files — they run in separate runners (Vitest vs `node --test`), so
+neither one failing will surface from the other's command.
 
 Sync invariants worth knowing before touching this area (full spec in
 `docs/PHASE2.md`, especially §11):
