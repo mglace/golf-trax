@@ -90,6 +90,18 @@ no identities with any other product (PHASE2.md §1.3).
    - **Cross-Origin Authentication:** with the custom domain (`auth.golftrax.app`)
      fronting the tenant, the token/passwordless calls are first-party, so no
      third-party-cookie workarounds are needed.
+   - **Attack Protection (important for the embedded flow):** calling
+     `/passwordless/start` and the OTP grant directly from the SPA means Auth0's
+     hosted-page bot protection no longer applies, so:
+     - **Do not enable Bot Detection** on this tenant. Its CAPTCHA challenge is
+       rendered by the hosted Universal Login page, which this embedded form
+       doesn't show; with it on, sign-in fails with a `captcha`/`unauthorized`
+       error the UI can only surface as the generic "Couldn't send a code."
+     - **Do enable Suspicious IP Throttling and Brute-Force Protection.** Without
+       the hosted page, the public `client_id` + `/passwordless/start` is an
+       unauthenticated "email an arbitrary address from your tenant" endpoint and
+       the 6-digit code is guarded only by per-tenant rate limits; these two
+       Attack Protection features are the mitigation.
 3. **Authentication → Passwordless → Email:** enable the **Email** connection and
    turn it on for the SPA application. The app requests `send: 'code'` per
    sign-in, so the emailed credential is a numeric code — no magic-link template

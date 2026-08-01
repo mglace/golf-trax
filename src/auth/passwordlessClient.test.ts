@@ -3,6 +3,7 @@ import {
   clearSession,
   decodeJwt,
   getValidAccessToken,
+  invalidateSessions,
   loadSession,
   revokeRefreshToken,
   saveSession,
@@ -263,6 +264,32 @@ describe('getValidAccessToken', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1) // shared, not two POSTs
     expect(r1.token).toBe('AT2')
     expect(r2.token).toBe('AT2')
+  })
+
+  it('does not resurrect the session when sign-out invalidates an in-flight refresh', async () => {
+    let release!: (r: Response) => void
+    const fetchMock = vi.fn().mockImplementation(
+      () => new Promise<Response>((resolve) => (release = resolve)),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const expired = session({ expiresAt: Date.now() - 1000 })
+    saveSession(expired)
+
+    const pending = getValidAccessToken(CONFIG, expired)
+    // User signs out while the refresh is still in flight.
+    invalidateSessions()
+    clearSession()
+    release(
+      new Response(
+        JSON.stringify({ access_token: 'AT2', id_token: 'IT2', expires_in: 3600 }),
+        { status: 200 },
+      ),
+    )
+    const { token, session: next } = await pending
+
+    expect(token).toBeNull()
+    expect(next).toBeNull()
+    expect(loadSession()).toBeNull() // the late 200 must NOT re-persist
   })
 
   it('cannot refresh without a refresh token (stays paused, not signed out)', async () => {

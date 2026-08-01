@@ -20,6 +20,7 @@ import {
   clearSession,
   decodeJwt,
   getValidAccessToken,
+  invalidateSessions,
   loadSession,
   revokeRefreshToken,
   startEmailCode,
@@ -44,17 +45,25 @@ export default function PasswordlessRoot({
   sessionRef.current = session
 
   const getToken = useCallback(async () => {
-    const prev = sessionRef.current
-    const { token, session: next } = await getValidAccessToken(config, prev)
-    if (next !== prev) {
-      // An involuntary sign-out (refresh token revoked/expired → next is null
-      // while we had a session) must run the same §11.5 cleanup as the explicit
-      // Sign out, or the previous account's rounds linger in IndexedDB while the
-      // UI shows signed-out — visible to the next person on a shared device.
-      if (next === null && prev !== null) await clearAccountRounds()
-      setSession(next)
+    try {
+      const prev = sessionRef.current
+      const { token, session: next } = await getValidAccessToken(config, prev)
+      if (next !== prev) {
+        // An involuntary sign-out (refresh token revoked/expired → next is null
+        // while we had a session) runs the same §11.5 cleanup as the explicit
+        // Sign out, or the previous account's rounds linger in IndexedDB while
+        // the UI shows signed-out — visible to the next person on a shared
+        // device.
+        if (next === null && prev !== null) await clearAccountRounds()
+        setSession(next)
+      }
+      return token
+    } catch {
+      // AuthValue.getToken must never throw: syncClient's runSync awaits it
+      // outside its try, and treats a null token as "sync paused". Swallow any
+      // unexpected failure (non-JSON refresh body, a Dexie error) as null.
+      return null
     }
-    return token
   }, [config])
 
   // On mount, freshen a restored session's access token (or refresh it) so a
@@ -74,10 +83,13 @@ export default function PasswordlessRoot({
 
   const login = useCallback(() => setDialogOpen(true), [])
 
-  // Sign out: revoke the refresh token at Auth0 (best-effort/offline-tolerant),
-  // clear this device's account-owned rounds (§11.5), then drop the session.
+  // Sign out: invalidate any in-flight refresh first (so a slow refresh can't
+  // resurrect the session after we clear it), revoke the refresh token at Auth0
+  // (best-effort/offline-tolerant), clear this device's account-owned rounds
+  // (§11.5), then drop the session.
   const logout = useCallback(() => {
     const current = sessionRef.current
+    invalidateSessions()
     if (current?.refreshToken) revokeRefreshToken(config, current.refreshToken)
     void clearAccountRounds().finally(() => {
       clearSession()

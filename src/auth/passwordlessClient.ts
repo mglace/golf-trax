@@ -208,10 +208,25 @@ type RefreshOutcome =
 // revokes the whole token family — so concurrent callers must share one request.
 let pendingRefresh: { token: string; promise: Promise<RefreshOutcome> } | null = null
 
+// Bumped on sign-out. A refresh already in flight when the user signs out must
+// not resurrect the session — neither re-persisting it to localStorage nor
+// pushing it back into React state (PHASE2.md §11.5, shared-device safety).
+let authEpoch = 0
+
+/**
+ * Invalidate any in-flight refresh so its result is discarded, and drop the
+ * single-flight handle. Call this from sign-out BEFORE clearing local state.
+ */
+export function invalidateSessions(): void {
+  authEpoch += 1
+  pendingRefresh = null
+}
+
 async function performRefresh(
   config: PasswordlessConfig,
   session: StoredSession,
 ): Promise<RefreshOutcome> {
+  const epoch = authEpoch
   let res: Response
   try {
     res = await fetch(`https://${config.domain}/oauth/token`, {
@@ -238,6 +253,9 @@ async function performRefresh(
     return { status: 'retry' }
   }
   const next = toSession((await res.json()) as TokenResponse, session.refreshToken)
+  // A sign-out landed while this refresh was in flight — discard the result so
+  // it can't re-persist or resurrect the session that was just cleared.
+  if (epoch !== authEpoch) return { status: 'cleared' }
   saveSession(next)
   return { status: 'renewed', session: next }
 }
