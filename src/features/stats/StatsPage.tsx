@@ -8,6 +8,7 @@ import {
   playSummary,
   holeDifficulty,
   courseBreakdown,
+  courseOptions,
   trendSeries,
   windowRounds,
   isScoreable,
@@ -34,10 +35,11 @@ const WINDOWS: { key: StatsWindow; label: string }[] = [
 
 export function StatsPage() {
   const navigate = useNavigate()
-  const rounds = useLiveQuery(() => getCompletedRounds(), [])
+  const allRounds = useLiveQuery(() => getCompletedRounds(), [])
   const [window, setWindow] = useState<StatsWindow>('all')
+  const [courseId, setCourseId] = useState<string>('all')
 
-  if (rounds === undefined) {
+  if (allRounds === undefined) {
     return (
       <div className="flex items-center justify-center gap-2 py-24 text-slate-500">
         <SpinnerIcon className="h-6 w-6" aria-hidden />
@@ -46,7 +48,7 @@ export function StatsPage() {
     )
   }
 
-  if (rounds.length === 0) {
+  if (allRounds.length === 0) {
     return (
       <div className="py-6">
         <h1 className="mb-6 text-2xl font-bold tracking-tight">Stats</h1>
@@ -57,6 +59,13 @@ export function StatsPage() {
       </div>
     )
   }
+
+  // Distinct courses for the filter (derived from every completed round so the
+  // selector stays stable regardless of the current window/course selection).
+  const courseChoices = courseOptions(allRounds)
+  // Drop a stale selection (e.g. its last round was deleted) back to "All".
+  const activeCourseId = courseId !== 'all' && courseChoices.some((c) => c.courseId === courseId) ? courseId : 'all'
+  const rounds = activeCourseId === 'all' ? allRounds : allRounds.filter((r) => r.courseId === activeCourseId)
 
   // Per-round metrics only count fully-entered rounds (see isScoreable).
   const scoreable = rounds.filter(isScoreable)
@@ -76,6 +85,28 @@ export function StatsPage() {
   return (
     <div className="py-6">
       <h1 className="mb-4 text-2xl font-bold tracking-tight">Stats</h1>
+
+      {/* Course filter */}
+      {courseChoices.length > 1 && (
+        <div className="mb-4">
+          <label htmlFor="stats-course-filter" className="sr-only">
+            Filter by course
+          </label>
+          <select
+            id="stats-course-filter"
+            value={activeCourseId}
+            onChange={(e) => setCourseId(e.target.value)}
+            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 shadow-sm focus:border-fairway-500 focus:outline-none focus:ring-2 focus:ring-fairway-200"
+          >
+            <option value="all">All courses ({allRounds.length})</option>
+            {courseChoices.map((c) => (
+              <option key={c.courseId} value={c.courseId}>
+                {c.courseName} ({c.count})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Handicap estimate hero */}
       <div className="rounded-2xl border border-fairway-200 bg-fairway-50/60 p-5 shadow-sm">
@@ -176,12 +207,14 @@ export function StatsPage() {
             <HoleList title="Toughest holes" holes={hardest} />
             <HoleList title="Easiest holes" holes={easiest} />
           </div>
-          <p className="mt-1 text-xs text-slate-500">Average score vs par by hole, across all courses.</p>
+          <p className="mt-1 text-xs text-slate-500">
+            Average score vs par by hole, {activeCourseId === 'all' ? 'across all courses' : 'for this course'}.
+          </p>
         </section>
       )}
 
-      {/* By course */}
-      {courses.length > 0 && (
+      {/* By course (redundant once a single course is selected) */}
+      {activeCourseId === 'all' && courses.length > 0 && (
         <section className="mt-6" aria-label="By course">
           <h2 className="mb-2 text-sm font-semibold text-slate-600">By course</h2>
           <ul className="space-y-2">
