@@ -70,19 +70,35 @@ support sync:
    *rounds* (they're self-contained); course cache can stay device-local. See
    §6.3.
 
-## 4. Authentication (Auth0 passwordless)
+## 4. Authentication (Auth0 passwordless — embedded email code)
 
 - A **dedicated Auth0 application** for GolfTrax with the **Passwordless: Email**
-  connection (magic link). No passwords, no social — one field: email.
-- The SPA uses Auth0's SDK to run the passwordless flow and obtain an
-  **access token** (JWT) for the GolfTrax API audience.
+  connection. No passwords, no social — one field: email.
+- **Embedded, not hosted.** The SPA renders its **own** two-step sign-in form
+  (`src/auth/SignInDialog.tsx`) and calls Auth0's passwordless endpoints
+  directly (`src/auth/passwordlessClient.ts`): `POST /passwordless/start` emails
+  a **numeric code**, then `POST /oauth/token` (the passwordless-OTP grant)
+  exchanges the code for an **access token** (JWT) for the GolfTrax API
+  audience, plus a refresh token.
+
+  > **Why embedded, and why a code not a link.** The New Universal Login
+  > experience doesn't support the passwordless flow, and the Classic hosted
+  > page proved fragile to even load — the redirect *was* the failure. A magic
+  > link also opens in whatever browser the mail app picks (often not the
+  > installed PWA), so the session lands in the wrong context. An in-app code
+  > has no redirect and no hosted page: nothing to fail to load, and it fills
+  > from the OS one-time-code suggestion on mobile. The backend is unchanged and
+  > issuer-agnostic (§1.4), so this is purely a client swap.
+
 - **Functions validate the JWT** on every `/api/sync/*` call: verify signature
   against Auth0's JWKS, check `iss`/`aud`/`exp`, and derive the user id from the
   `sub` claim. **The user id always comes from the verified token, never from
   the request body.**
 - **Offline tolerance:** an expired token with no network must not break the
   app. The client treats "no valid token" as simply "sync paused" — the local
-  UI keeps working; sync resumes when a token can be refreshed online.
+  UI keeps working; sync resumes when the refresh token can renew online. A
+  refresh token rejected by Auth0 (revoked/expired) clears the local session; a
+  network failure keeps it for a later retry.
 
 ```mermaid
 sequenceDiagram
@@ -91,11 +107,12 @@ sequenceDiagram
   participant A0 as Auth0 (passwordless)
   participant Fn as Azure Functions /api
   participant DB as Cosmos DB
-  U->>SPA: Enter email, request link
-  SPA->>A0: Start passwordless
-  A0-->>U: Email magic link
-  U->>A0: Click link
-  A0-->>SPA: Access token (JWT)
+  U->>SPA: Enter email (in-app form)
+  SPA->>A0: POST /passwordless/start (send: code)
+  A0-->>U: Email a numeric code
+  U->>SPA: Type the code
+  SPA->>A0: POST /oauth/token (passwordless OTP grant)
+  A0-->>SPA: Access token (JWT) + refresh token
   SPA->>Fn: POST /api/sync/push (Bearer JWT)
   Fn->>A0: Validate via JWKS
   Fn->>DB: Upsert rounds for sub=userId

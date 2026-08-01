@@ -13,13 +13,16 @@ cross-device sync depends on. It implements the decisions in
 
 Before writing any sync code against real infrastructure, confirm:
 
-1. **Auth0 passwordless is in-plan.** The **Passwordless: Email** (magic link)
-   connection is available on the free/essentials tiers, but confirm for your
-   tenant.
+1. **Auth0 passwordless is in-plan.** The **Passwordless: Email** connection is
+   available on the free/essentials tiers, but confirm for your tenant. GolfTrax
+   uses the **email code** variant (a numeric code the user types back into the
+   app), **not** the magic link — the app renders its own sign-in form and never
+   redirects to an Auth0-hosted page (PHASE2.md §4).
 2. **A production email provider is configured.** Auth0's built-in dev email is
    **rate-limited and not for production**. Wire up a real provider (SendGrid,
    Mailgun, Amazon SES, etc.) under **Auth0 → Branding → Email Provider** before
-   go-live, or magic-link delivery will throttle.
+   go-live, or code delivery will throttle (a throttled/undelivered email reads
+   to the user as "the code never came").
 3. **Cost check.** Serverless Cosmos is pay-per-request and Auth0 bills by
    monthly active users (MAU). For a personal app both sit comfortably in free
    allowances, but confirm the projected MAU + RU/storage against current
@@ -70,14 +73,33 @@ no identities with any other product (PHASE2.md §1.3).
 
 2. **Applications → Create Application → Single Page Web Application.** Note the
    **Domain** and **Client ID**.
-   - **Allowed Callback URLs / Logout URLs / Web Origins:** your app origin(s),
-     e.g. `http://localhost:5173` for dev and your SWA hostname for prod.
-3. **Authentication → Passwordless → Email:** enable the **magic link** flow.
-   Enable the Email connection for the SPA application.
+   - **Allowed Web Origins** and **Allowed Origins (CORS):** your app origin(s),
+     e.g. `http://localhost:5173` for dev and your SWA hostname for prod. Both
+     lists matter here: the SPA calls `/passwordless/start` and `/oauth/token`
+     directly from the browser, so those origins must be CORS-allowed or every
+     sign-in fails at the network layer.
+   - **Callback / Logout URLs** are not used by the embedded flow (there is no
+     redirect), but setting them to the same origins does no harm.
+   - **Settings → Advanced → Grant Types:** enable **Passwordless OTP** and
+     **Refresh Token** (in addition to the defaults). Without the former the
+     code exchange 403s; without the latter no refresh token is issued and
+     sessions can't survive silently.
+   - **Settings → Refresh Token Rotation:** set to **Rotating** with an
+     inactivity/absolute expiry. A browser SPA only gets durable refresh tokens
+     with rotation on.
+   - **Cross-Origin Authentication:** with the custom domain (`auth.golftrax.app`)
+     fronting the tenant, the token/passwordless calls are first-party, so no
+     third-party-cookie workarounds are needed.
+3. **Authentication → Passwordless → Email:** enable the **Email** connection and
+   turn it on for the SPA application. The app requests `send: 'code'` per
+   sign-in, so the emailed credential is a numeric code — no magic-link template
+   or callback to configure. Configure the email **template** (subject/body) if
+   you want to brand it.
 4. **APIs → Create API** for the backend audience, e.g. identifier
    `https://api.golftrax.app` (this string is the `AUTH0_AUDIENCE` /
    `VITE_AUTH0_AUDIENCE`; it does not have to resolve to a real URL). Signing
-   algorithm **RS256**.
+   algorithm **RS256**. Enable **Allow Offline Access** so refresh tokens are
+   issued for this audience.
 
 ### Client (SPA) settings
 

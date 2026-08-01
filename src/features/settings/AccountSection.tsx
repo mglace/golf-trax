@@ -3,9 +3,10 @@
  * configured for the build; otherwise the app stays a local-only MVP and this
  * section is absent entirely.
  *
- * Signed out → a one-tap "Sign in to sync across devices" (Auth0 passwordless
- * via Universal Login). Signed in → the account email, a live sync-status line,
- * and sign-out. Nothing here blocks on the network (§7).
+ * Signed out → a one-tap "Sign in to sync across devices" that opens the
+ * embedded passwordless email-code dialog (no Auth0-hosted page). Signed in →
+ * the account email, a live sync-status line, and sign-out. Nothing here blocks
+ * on the network (§7).
  */
 import { useAuth } from '@/auth/authContext'
 import { useSyncStore, type SyncStatus } from '@/sync/syncStore'

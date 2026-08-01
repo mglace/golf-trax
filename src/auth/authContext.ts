@@ -7,7 +7,7 @@ import { createContext, useContext } from 'react'
 export interface AuthValue {
   /** Whether account sync is configured in this build. */
   isConfigured: boolean
-  /** Auth0 still resolving the session on load. */
+  /** Still resolving a restored session on load. */
   isLoading: boolean
   isAuthenticated: boolean
   /** Stable account id (the JWT `sub`), or null when signed out/unconfigured. */
