@@ -31,6 +31,43 @@ GolfTrax uses a **dedicated** Auth0 application and user directory — it shares
 no identities with any other product (PHASE2.md §1.3).
 
 1. Create (or reuse) an Auth0 tenant for GolfTrax.
+
+   > **The live issuer is the custom domain `auth.golftrax.app`.** The
+   > underlying tenant is still `dev-t2f04o583lwuw2ii.us.auth0.com`
+   > (auto-generated at signup) — a custom domain fronts the tenant, it does not
+   > replace it. Everything in this doc that takes a "domain" wants
+   > `auth.golftrax.app`, and tokens carry `iss: https://auth.golftrax.app/`
+   > (trailing slash included).
+   >
+   > **Why a custom domain and not a renamed/new tenant.** Auth0 tenant names are
+   > immutable — not changeable via the dashboard, the Management API, or the
+   > CLI, and a deleted tenant's name is burned permanently. Only `friendly_name`
+   > (the display name on the dashboard and Universal Login screens) is editable,
+   > via `PATCH /api/v2/tenants/settings`. A custom domain keeps the same tenant,
+   > so user `sub` values are unchanged and synced data stays attached to its
+   > owner. A *new* tenant would issue new `sub` values and orphan every synced
+   > round in Cosmos (PHASE2.md §4) — a data migration, not a rename. The Free
+   > plan includes one custom domain (credit card on file required for
+   > verification; not charged).
+   >
+   > **Cutting the domain over is a lockstep change.** `VITE_AUTH0_DOMAIN` (build
+   > time) and `AUTH0_DOMAIN` (SWA app setting) must move together —
+   > `api/src/auth.js` derives both the expected issuer and the JWKS URI from
+   > `AUTH0_DOMAIN`, so while the two disagree every sync request 401s. The
+   > workflow value only takes effect on the next deploy, so there is an
+   > unavoidable brief window whichever side you change first; only sync is
+   > affected, local round entry keeps working. Existing sessions must re-login
+   > after the cutover because `iss` changed, but `sub` is unchanged so nothing
+   > in Cosmos is orphaned.
+   >
+   > Sanity-check a cutover with:
+   > ```bash
+   > curl -s https://auth.golftrax.app/.well-known/openid-configuration
+   > curl -s https://auth.golftrax.app/.well-known/jwks.json
+   > ```
+   > A fresh custom domain can serve a TLS handshake failure for a few minutes
+   > while Auth0 provisions the certificate — retry before assuming it's broken.
+
 2. **Applications → Create Application → Single Page Web Application.** Note the
    **Domain** and **Client ID**.
    - **Allowed Callback URLs / Logout URLs / Web Origins:** your app origin(s),
@@ -50,7 +87,7 @@ has no client secret):
 
 | Variable | Value |
 | --- | --- |
-| `VITE_AUTH0_DOMAIN` | your tenant domain, e.g. `golftrax.us.auth0.com` |
+| `VITE_AUTH0_DOMAIN` | the Auth0 domain (no scheme) — live value `auth.golftrax.app` |
 | `VITE_AUTH0_CLIENT_ID` | the SPA application's Client ID |
 | `VITE_AUTH0_AUDIENCE` | the API identifier, e.g. `https://api.golftrax.app` |
 
@@ -62,7 +99,7 @@ SWA EasyAuth, keeping the backend issuer-agnostic (§1.4).
 
 | App setting | Value |
 | --- | --- |
-| `AUTH0_DOMAIN` | your tenant domain (no scheme), e.g. `golftrax.us.auth0.com` |
+| `AUTH0_DOMAIN` | the Auth0 domain (no scheme) — live value `auth.golftrax.app`; must match `VITE_AUTH0_DOMAIN` |
 | `AUTH0_AUDIENCE` | must match `VITE_AUTH0_AUDIENCE` |
 
 ## 2. Cosmos DB — serverless account
@@ -150,7 +187,7 @@ az cosmosdb keys list --name golftrax-cosmos --resource-group golftrax-rg \
 az staticwebapp appsettings set \
   --name golftrax --resource-group golftrax-rg \
   --setting-names \
-    AUTH0_DOMAIN=golftrax.us.auth0.com \
+    AUTH0_DOMAIN=auth.golftrax.app \
     AUTH0_AUDIENCE=https://api.golftrax.app \
     COSMOS_ENDPOINT=https://golftrax-cosmos.documents.azure.com:443/ \
     COSMOS_KEY=<primary-key> \

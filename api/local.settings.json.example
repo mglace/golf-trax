@@ -5,7 +5,7 @@
     "AzureWebJobsStorage": "",
     "GOLF_API_KEY": "your_golfcourseapi_key_here",
 
-    "AUTH0_DOMAIN": "your-tenant.us.auth0.com",
+    "AUTH0_DOMAIN": "auth.golftrax.app",
     "AUTH0_AUDIENCE": "https://api.golftrax.app",
 
     "COSMOS_ENDPOINT": "https://your-account.documents.azure.com:443/",

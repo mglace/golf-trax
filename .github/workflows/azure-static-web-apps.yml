@@ -41,7 +41,10 @@ jobs:
           # Public Auth0 values (no client secret in a passwordless SPA) — must
           # be present at build time or Vite inlines them as undefined and the
           # sync UI stays hidden (see src/auth/authConfig.ts).
-          VITE_AUTH0_DOMAIN: dev-t2f04o583lwuw2ii.us.auth0.com
+          # Auth0 custom domain. Must stay in lockstep with the AUTH0_DOMAIN app
+          # setting on the SWA — api/src/auth.js derives both the expected `iss`
+          # and the JWKS URI from it, so a half-cutover 401s every sync request.
+          VITE_AUTH0_DOMAIN: auth.golftrax.app
           VITE_AUTH0_CLIENT_ID: xRXVIPCv3eOMp3Frv2gsmrqFciRolSY0
           VITE_AUTH0_AUDIENCE: https://api.golftrax.app
 
