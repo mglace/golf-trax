@@ -97,8 +97,9 @@ export function StatsPage() {
     <div className="py-6">
       <h1 className="mb-4 text-2xl font-bold tracking-tight">Stats</h1>
 
-      {/* Course filter */}
-      {courseChoices.length > 1 && (
+      {/* Course filter — also shown while a filter is active even if only one
+          course now has rounds, so there's always a control to clear it. */}
+      {(courseChoices.length > 1 || courseScoped) && (
         <div className="mb-4">
           <label htmlFor="stats-course-filter" className="sr-only">
             Filter by course
