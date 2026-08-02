@@ -65,7 +65,8 @@ export function StatsPage() {
   const courseChoices = courseOptions(allRounds)
   // Drop a stale selection (e.g. its last round was deleted) back to "All".
   const activeCourseId = courseId !== 'all' && courseChoices.some((c) => c.courseId === courseId) ? courseId : 'all'
-  const rounds = activeCourseId === 'all' ? allRounds : allRounds.filter((r) => r.courseId === activeCourseId)
+  const courseScoped = activeCourseId !== 'all'
+  const rounds = courseScoped ? allRounds.filter((r) => r.courseId === activeCourseId) : allRounds
 
   // Per-round metrics only count fully-entered rounds (see isScoreable).
   const scoreable = rounds.filter(isScoreable)
@@ -76,7 +77,7 @@ export function StatsPage() {
   const trend = trendSeries(scoreable, 10)
   const courses = courseBreakdown(scoreable, 5)
 
-  // Per-hole stats are valid for any played hole, so they use all completed rounds.
+  // Per-hole stats are valid for any played hole, so they use every (filtered) round.
   const play = playSummary(windowRounds(rounds, window))
   const difficulty = holeDifficulty(rounds)
   const hardest = difficulty.slice(0, 3)
@@ -128,8 +129,9 @@ export function StatsPage() {
         </div>
         <p className="mt-3 text-xs text-slate-500">
           Rough estimate from your last {handicap?.sampleSize ?? 0}{' '}
-          {handicap?.sampleSize === 1 ? 'round' : 'rounds'} (18-hole equivalent vs par). Not an
-          official USGA handicap.
+          {handicap?.sampleSize === 1 ? 'round' : 'rounds'}
+          {courseScoped ? ' at this course' : ''} (18-hole equivalent vs par). Not an official USGA
+          handicap.
         </p>
         {excluded > 0 && (
           <p className="mt-1 text-xs text-slate-500">
@@ -166,7 +168,11 @@ export function StatsPage() {
         <div className="grid grid-cols-3 gap-2">
           <Tile label="Avg score" value={summary.avgScore18 === null ? '—' : summary.avgScore18.toFixed(1)} sub="per 18" />
           <Tile label="Avg vs par" value={fmtVsPar(summary.avgVsPar18)} sub="per 18" />
-          <Tile label="Rounds" value={String(summary.count)} sub={window === 'all' ? 'all-time' : `last ${window}`} />
+          <Tile
+            label="Rounds"
+            value={String(summary.count)}
+            sub={window === 'all' ? (courseScoped ? 'this course' : 'all-time') : `last ${window}`}
+          />
         </div>
         <div className="mt-2 grid grid-cols-2 gap-2">
           <RoundTile label="Best" score={summary.best} onOpen={(id) => navigate(`/round/${id}/summary`)} />
@@ -225,7 +231,7 @@ export function StatsPage() {
               >
                 <div className="min-w-0">
                   <p className="truncate font-semibold text-slate-900">{c.courseName}</p>
-                  <p className="text-xs text-slate-500">{c.count} rounds</p>
+                  <p className="text-xs text-slate-500">{c.count} scored</p>
                 </div>
                 <p className="shrink-0 text-lg font-bold tabular-nums text-fairway-700">
                   {fmtVsPar(c.avgVsPar18)}
