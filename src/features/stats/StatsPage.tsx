@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { getCompletedRounds } from '@/db/roundsRepo'
@@ -37,7 +37,20 @@ export function StatsPage() {
   const navigate = useNavigate()
   const allRounds = useLiveQuery(() => getCompletedRounds(), [])
   const [window, setWindow] = useState<StatsWindow>('all')
-  const [courseId, setCourseId] = useState<string>('all')
+  // null = no course filter. A real courseId is an opaque slug, so keeping the
+  // "all" case out of that value space avoids any collision with an id.
+  const [courseId, setCourseId] = useState<string | null>(null)
+
+  // Distinct courses for the filter, derived from every completed round so the
+  // selector stays stable regardless of the current window/course selection.
+  const courseChoices = allRounds ? courseOptions(allRounds) : []
+  const selectionValid = courseId !== null && courseChoices.some((c) => c.courseId === courseId)
+  // If the selected course disappears (e.g. its rounds were deleted on another
+  // device and synced away), clear the filter so it can't silently re-apply if
+  // that course later returns while the page stays mounted.
+  useEffect(() => {
+    if (courseId !== null && !selectionValid) setCourseId(null)
+  }, [courseId, selectionValid])
 
   if (allRounds === undefined) {
     return (
@@ -60,12 +73,9 @@ export function StatsPage() {
     )
   }
 
-  // Distinct courses for the filter (derived from every completed round so the
-  // selector stays stable regardless of the current window/course selection).
-  const courseChoices = courseOptions(allRounds)
-  // Drop a stale selection (e.g. its last round was deleted) back to "All".
-  const activeCourseId = courseId !== 'all' && courseChoices.some((c) => c.courseId === courseId) ? courseId : 'all'
-  const courseScoped = activeCourseId !== 'all'
+  // Mask a stale selection for this render; the effect above also clears it.
+  const activeCourseId = selectionValid ? courseId : null
+  const courseScoped = activeCourseId !== null
   const rounds = courseScoped ? allRounds.filter((r) => r.courseId === activeCourseId) : allRounds
 
   // Per-round metrics only count fully-entered rounds (see isScoreable).
@@ -95,11 +105,11 @@ export function StatsPage() {
           </label>
           <select
             id="stats-course-filter"
-            value={activeCourseId}
-            onChange={(e) => setCourseId(e.target.value)}
-            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 shadow-sm focus:border-fairway-500 focus:outline-none focus:ring-2 focus:ring-fairway-200"
+            value={activeCourseId ?? ''}
+            onChange={(e) => setCourseId(e.target.value || null)}
+            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-base font-semibold text-slate-900 shadow-sm focus:border-fairway-500 focus:outline-none focus:ring-2 focus:ring-fairway-200"
           >
-            <option value="all">All courses ({allRounds.length})</option>
+            <option value="">All courses ({allRounds.length})</option>
             {courseChoices.map((c) => (
               <option key={c.courseId} value={c.courseId}>
                 {c.courseName} ({c.count})
@@ -214,13 +224,13 @@ export function StatsPage() {
             <HoleList title="Easiest holes" holes={easiest} />
           </div>
           <p className="mt-1 text-xs text-slate-500">
-            Average score vs par by hole, {activeCourseId === 'all' ? 'across all courses' : 'for this course'}.
+            Average score vs par by hole, {courseScoped ? 'for this course' : 'across all courses'}.
           </p>
         </section>
       )}
 
       {/* By course (redundant once a single course is selected) */}
-      {activeCourseId === 'all' && courses.length > 0 && (
+      {!courseScoped && courses.length > 0 && (
         <section className="mt-6" aria-label="By course">
           <h2 className="mb-2 text-sm font-semibold text-slate-600">By course</h2>
           <ul className="space-y-2">
