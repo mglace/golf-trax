@@ -44,6 +44,10 @@ export function StatsPage() {
   // Distinct courses for the filter, derived from every completed round so the
   // selector stays stable regardless of the current window/course selection.
   const courseChoices = allRounds ? courseOptions(allRounds) : []
+  // Counts shown in the selector use scored rounds so they match every other
+  // count on the page (hero, "By course"), which all exclude unscored rounds.
+  const scoreableAll = allRounds ? allRounds.filter(isScoreable) : []
+  const scoredByCourse = new Map(courseOptions(scoreableAll).map((c) => [c.courseId, c.count]))
   const selectionValid = courseId !== null && courseChoices.some((c) => c.courseId === courseId)
   // If the selected course disappears (e.g. its rounds were deleted on another
   // device and synced away), clear the filter so it can't silently re-apply if
@@ -110,10 +114,10 @@ export function StatsPage() {
             onChange={(e) => setCourseId(e.target.value || null)}
             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-base font-semibold text-slate-900 shadow-sm focus:border-fairway-500 focus:outline-none focus:ring-2 focus:ring-fairway-200"
           >
-            <option value="">All courses ({allRounds.length})</option>
+            <option value="">All courses ({scoreableAll.length})</option>
             {courseChoices.map((c) => (
               <option key={c.courseId} value={c.courseId}>
-                {c.courseName} ({c.count})
+                {c.courseName} ({scoredByCourse.get(c.courseId) ?? 0})
               </option>
             ))}
           </select>
@@ -182,7 +186,7 @@ export function StatsPage() {
           <Tile
             label="Rounds"
             value={String(summary.count)}
-            sub={window === 'all' ? (courseScoped ? 'this course' : 'all-time') : `last ${window}`}
+            sub={courseScoped ? 'this course' : window === 'all' ? 'all-time' : `last ${window}`}
           />
         </div>
         <div className="mt-2 grid grid-cols-2 gap-2">
