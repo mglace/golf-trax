@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { getCompletedRounds } from '@/db/roundsRepo'
@@ -8,6 +8,7 @@ import {
   playSummary,
   holeDifficulty,
   courseBreakdown,
+  courseOptions,
   trendSeries,
   windowRounds,
   isScoreable,
@@ -34,10 +35,28 @@ const WINDOWS: { key: StatsWindow; label: string }[] = [
 
 export function StatsPage() {
   const navigate = useNavigate()
-  const rounds = useLiveQuery(() => getCompletedRounds(), [])
+  const allRounds = useLiveQuery(() => getCompletedRounds(), [])
   const [window, setWindow] = useState<StatsWindow>('all')
+  // null = no course filter. A real courseId is an opaque slug, so keeping the
+  // "all" case out of that value space avoids any collision with an id.
+  const [courseId, setCourseId] = useState<string | null>(null)
 
-  if (rounds === undefined) {
+  // Distinct courses for the filter, derived from every completed round so the
+  // selector stays stable regardless of the current window/course selection.
+  const courseChoices = allRounds ? courseOptions(allRounds) : []
+  // Counts shown in the selector use scored rounds so they match every other
+  // count on the page (hero, "By course"), which all exclude unscored rounds.
+  const scoreableAll = allRounds ? allRounds.filter(isScoreable) : []
+  const scoredByCourse = new Map(courseOptions(scoreableAll).map((c) => [c.courseId, c.count]))
+  const selectionValid = courseId !== null && courseChoices.some((c) => c.courseId === courseId)
+  // If the selected course disappears (e.g. its rounds were deleted on another
+  // device and synced away), clear the filter so it can't silently re-apply if
+  // that course later returns while the page stays mounted.
+  useEffect(() => {
+    if (courseId !== null && !selectionValid) setCourseId(null)
+  }, [courseId, selectionValid])
+
+  if (allRounds === undefined) {
     return (
       <div className="flex items-center justify-center gap-2 py-24 text-slate-500">
         <SpinnerIcon className="h-6 w-6" aria-hidden />
@@ -46,7 +65,7 @@ export function StatsPage() {
     )
   }
 
-  if (rounds.length === 0) {
+  if (allRounds.length === 0) {
     return (
       <div className="py-6">
         <h1 className="mb-6 text-2xl font-bold tracking-tight">Stats</h1>
@@ -58,6 +77,11 @@ export function StatsPage() {
     )
   }
 
+  // Mask a stale selection for this render; the effect above also clears it.
+  const activeCourseId = selectionValid ? courseId : null
+  const courseScoped = activeCourseId !== null
+  const rounds = courseScoped ? allRounds.filter((r) => r.courseId === activeCourseId) : allRounds
+
   // Per-round metrics only count fully-entered rounds (see isScoreable).
   const scoreable = rounds.filter(isScoreable)
   const excluded = rounds.length - scoreable.length
@@ -67,7 +91,7 @@ export function StatsPage() {
   const trend = trendSeries(scoreable, 10)
   const courses = courseBreakdown(scoreable, 5)
 
-  // Per-hole stats are valid for any played hole, so they use all completed rounds.
+  // Per-hole stats are valid for any played hole, so they use every (filtered) round.
   const play = playSummary(windowRounds(rounds, window))
   const difficulty = holeDifficulty(rounds)
   const hardest = difficulty.slice(0, 3)
@@ -76,6 +100,29 @@ export function StatsPage() {
   return (
     <div className="py-6">
       <h1 className="mb-4 text-2xl font-bold tracking-tight">Stats</h1>
+
+      {/* Course filter — also shown while a filter is active even if only one
+          course now has rounds, so there's always a control to clear it. */}
+      {(courseChoices.length > 1 || courseScoped) && (
+        <div className="mb-4">
+          <label htmlFor="stats-course-filter" className="sr-only">
+            Filter by course
+          </label>
+          <select
+            id="stats-course-filter"
+            value={activeCourseId ?? ''}
+            onChange={(e) => setCourseId(e.target.value || null)}
+            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-base font-semibold text-slate-900 shadow-sm focus:border-fairway-500 focus:outline-none focus:ring-2 focus:ring-fairway-200"
+          >
+            <option value="">All courses ({scoreableAll.length})</option>
+            {courseChoices.map((c) => (
+              <option key={c.courseId} value={c.courseId}>
+                {c.courseName} ({scoredByCourse.get(c.courseId) ?? 0})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Handicap estimate hero */}
       <div className="rounded-2xl border border-fairway-200 bg-fairway-50/60 p-5 shadow-sm">
@@ -97,8 +144,9 @@ export function StatsPage() {
         </div>
         <p className="mt-3 text-xs text-slate-500">
           Rough estimate from your last {handicap?.sampleSize ?? 0}{' '}
-          {handicap?.sampleSize === 1 ? 'round' : 'rounds'} (18-hole equivalent vs par). Not an
-          official USGA handicap.
+          {handicap?.sampleSize === 1 ? 'round' : 'rounds'}
+          {courseScoped ? ' at this course' : ''} (18-hole equivalent vs par). Not an official USGA
+          handicap.
         </p>
         {excluded > 0 && (
           <p className="mt-1 text-xs text-slate-500">
@@ -135,7 +183,11 @@ export function StatsPage() {
         <div className="grid grid-cols-3 gap-2">
           <Tile label="Avg score" value={summary.avgScore18 === null ? '—' : summary.avgScore18.toFixed(1)} sub="per 18" />
           <Tile label="Avg vs par" value={fmtVsPar(summary.avgVsPar18)} sub="per 18" />
-          <Tile label="Rounds" value={String(summary.count)} sub={window === 'all' ? 'all-time' : `last ${window}`} />
+          <Tile
+            label="Rounds"
+            value={String(summary.count)}
+            sub={courseScoped ? 'this course' : window === 'all' ? 'all-time' : `last ${window}`}
+          />
         </div>
         <div className="mt-2 grid grid-cols-2 gap-2">
           <RoundTile label="Best" score={summary.best} onOpen={(id) => navigate(`/round/${id}/summary`)} />
@@ -176,12 +228,14 @@ export function StatsPage() {
             <HoleList title="Toughest holes" holes={hardest} />
             <HoleList title="Easiest holes" holes={easiest} />
           </div>
-          <p className="mt-1 text-xs text-slate-500">Average score vs par by hole, across all courses.</p>
+          <p className="mt-1 text-xs text-slate-500">
+            Average score vs par by hole, {courseScoped ? 'for this course' : 'across all courses'}.
+          </p>
         </section>
       )}
 
-      {/* By course */}
-      {courses.length > 0 && (
+      {/* By course (redundant once a single course is selected) */}
+      {!courseScoped && courses.length > 0 && (
         <section className="mt-6" aria-label="By course">
           <h2 className="mb-2 text-sm font-semibold text-slate-600">By course</h2>
           <ul className="space-y-2">
@@ -192,7 +246,7 @@ export function StatsPage() {
               >
                 <div className="min-w-0">
                   <p className="truncate font-semibold text-slate-900">{c.courseName}</p>
-                  <p className="text-xs text-slate-500">{c.count} rounds</p>
+                  <p className="text-xs text-slate-500">{c.count} scored</p>
                 </div>
                 <p className="shrink-0 text-lg font-bold tabular-nums text-fairway-700">
                   {fmtVsPar(c.avgVsPar18)}

@@ -180,6 +180,32 @@ export function courseBreakdown(rounds: Round[], minRounds = 5): CourseStat[] {
   return stats.sort((a, b) => b.count - a.count)
 }
 
+export interface CourseOption {
+  courseId: string
+  courseName: string
+  count: number
+}
+
+/**
+ * Distinct courses across the given rounds, for the stats course filter.
+ * Sorted by round count (most-played first), then name. The name shown is
+ * from the most recent round for that course (rounds are newest-first).
+ */
+export function courseOptions(rounds: Round[]): CourseOption[] {
+  const byCourse = new Map<string, { courseName: string; count: number }>()
+  for (const r of rounds) {
+    const cur = byCourse.get(r.courseId)
+    if (cur) {
+      cur.count += 1
+    } else {
+      byCourse.set(r.courseId, { courseName: r.courseName, count: 1 })
+    }
+  }
+  return [...byCourse.entries()]
+    .map(([courseId, v]) => ({ courseId, courseName: v.courseName, count: v.count }))
+    .sort((a, b) => b.count - a.count || a.courseName.localeCompare(b.courseName))
+}
+
 export interface TrendPoint {
   id: string
   label: string

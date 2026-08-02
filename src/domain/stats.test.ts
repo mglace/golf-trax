@@ -6,6 +6,7 @@ import {
   playSummary,
   holeDifficulty,
   courseBreakdown,
+  courseOptions,
   trendSeries,
   windowRounds,
 } from './stats'
@@ -141,6 +142,35 @@ describe('courseBreakdown', () => {
     const stats = courseBreakdown([...many, ...few], 5)
     expect(stats).toHaveLength(1)
     expect(stats[0]).toMatchObject({ courseId: '7', count: 5 })
+  })
+})
+
+describe('courseOptions', () => {
+  it('lists distinct courses sorted by round count, then name', () => {
+    const rounds = [
+      makeRound({ vsPar: 2, length: '18', date: '2026-06-05', courseId: '9', courseName: 'Bravo' }),
+      makeRound({ vsPar: 3, length: '18', date: '2026-06-04', courseId: '7', courseName: 'Alpha' }),
+      makeRound({ vsPar: 4, length: '18', date: '2026-06-03', courseId: '7', courseName: 'Alpha' }),
+      makeRound({ vsPar: 1, length: '18', date: '2026-06-02', courseId: '3', courseName: 'Charlie' }),
+    ]
+    const opts = courseOptions(rounds)
+    expect(opts).toEqual([
+      { courseId: '7', courseName: 'Alpha', count: 2 },
+      { courseId: '9', courseName: 'Bravo', count: 1 },
+      { courseId: '3', courseName: 'Charlie', count: 1 },
+    ])
+  })
+
+  it('uses the most recent name for a course (rounds are newest-first)', () => {
+    const rounds = [
+      makeRound({ vsPar: 2, length: '18', date: '2026-06-05', courseId: '7', courseName: 'Renamed Links' }),
+      makeRound({ vsPar: 3, length: '18', date: '2026-06-04', courseId: '7', courseName: 'Old Name' }),
+    ]
+    expect(courseOptions(rounds)).toEqual([{ courseId: '7', courseName: 'Renamed Links', count: 2 }])
+  })
+
+  it('returns an empty list for no rounds', () => {
+    expect(courseOptions([])).toEqual([])
   })
 })
 
