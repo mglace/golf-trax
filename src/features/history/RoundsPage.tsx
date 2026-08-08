@@ -33,7 +33,6 @@ export function RoundsPage() {
   if (rounds.length === 0) {
     return (
       <div className="py-6">
-        <h1 className="mb-6 text-2xl font-bold tracking-tight">Rounds</h1>
         <div className="mt-10 flex flex-col items-center gap-3 text-center text-slate-500">
           <ListIcon className="h-10 w-10" aria-hidden />
           <p className="text-sm">
@@ -61,8 +60,6 @@ export function RoundsPage() {
 
   return (
     <div className="py-6">
-      <h1 className="mb-4 text-2xl font-bold tracking-tight">Rounds</h1>
-
       <div className="space-y-5">
         {groups.map((group) => (
           <section key={group.key} aria-label={group.label}>
