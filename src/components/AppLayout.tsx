@@ -1,17 +1,22 @@
-import { Outlet, useLocation } from 'react-router-dom'
+import { Outlet, useMatches } from 'react-router-dom'
 import { AppHeader } from './AppHeader'
 import { BottomNav } from './BottomNav'
 import { SyncManager } from '@/sync/SyncManager'
 
-/** The three tab routes that get the persistent {@link AppHeader}, and the
- * muted label it shows after the hairline divider (`undefined` on Home, where
- * the wordmark is the title). Every other route nested under this layout
- * (course search, round setup, settings) is a focused flow with its own
- * back-chevron header, and renders no app bar here. */
-const TAB_SCREEN_LABEL: Record<string, string | undefined> = {
-  '/': undefined,
-  '/rounds': 'Rounds',
-  '/stats': 'Stats',
+/**
+ * Route `handle` shape for the three tab routes (see `src/router.tsx`),
+ * carrying the muted label the persistent {@link AppHeader} shows after its
+ * hairline divider (`undefined` on Home, where the wordmark is the title).
+ * Every other route nested under this layout (course search, round setup) has
+ * no `handle` at all and renders its own back-chevron header instead;
+ * `/settings` has no header of its own — it relies on the bottom nav to leave.
+ */
+interface TabHandle {
+  screen?: string
+}
+
+function isTabHandle(handle: unknown): handle is TabHandle {
+  return typeof handle === 'object' && handle !== null
 }
 
 /**
@@ -26,19 +31,24 @@ const TAB_SCREEN_LABEL: Record<string, string | undefined> = {
  * The top safe-area inset is applied to whichever element is topmost: the
  * persistent {@link AppHeader} on the three tab routes, or `main` itself on
  * focused flows that render their own header below the true top edge.
+ *
+ * Whether a route is "tabbed" is read off the matched route's `handle`
+ * (set in `src/router.tsx`) rather than compared against the URL directly, so
+ * this stays correct under React Router's own matching rules — including the
+ * trailing-slash and case-insensitive matching a plain pathname string
+ * comparison would otherwise have to reimplement — and can't drift from the
+ * route table.
  */
 export function AppLayout() {
-  const { pathname } = useLocation()
-  // Normalize a trailing slash before the lookup — React Router matches
-  // '/rounds/' to the same route as '/rounds', but a plain key lookup would
-  // treat them as different paths and silently drop the header.
-  const key = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
-  const tabbed = key in TAB_SCREEN_LABEL
+  const matches = useMatches()
+  const leaf = matches[matches.length - 1]
+  const handle = leaf && isTabHandle(leaf.handle) ? leaf.handle : undefined
+  const tabbed = handle !== undefined
 
   return (
     <div className="app-shell flex flex-col overflow-hidden">
       <SyncManager />
-      {tabbed && <AppHeader screen={TAB_SCREEN_LABEL[key]} />}
+      {tabbed && <AppHeader screen={handle.screen} />}
       <main
         className={[
           'mx-auto w-full max-w-md flex-1 overflow-y-auto overscroll-contain px-4 pb-6',
