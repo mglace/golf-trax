@@ -68,7 +68,6 @@ export function StatsPage() {
   if (allRounds.length === 0) {
     return (
       <div className="py-6">
-        <h1 className="mb-6 text-2xl font-bold tracking-tight">Stats</h1>
         <div className="mt-10 flex flex-col items-center gap-3 text-center text-slate-500">
           <ChartIcon className="h-10 w-10" aria-hidden />
           <p className="text-sm">Log a few rounds and your stats will appear here.</p>
@@ -99,8 +98,6 @@ export function StatsPage() {
 
   return (
     <div className="py-6">
-      <h1 className="mb-4 text-2xl font-bold tracking-tight">Stats</h1>
-
       {/* Course filter — also shown while a filter is active even if only one
           course now has rounds, so there's always a control to clear it. */}
       {(courseChoices.length > 1 || courseScoped) && (

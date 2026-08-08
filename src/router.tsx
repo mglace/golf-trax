@@ -27,11 +27,14 @@ export const router = createBrowserRouter([
     path: '/',
     element: <AppLayout />,
     children: [
-      { index: true, element: <HomePage /> },
+      // `handle.screen` marks the three tab routes for AppLayout's persistent
+      // AppHeader (see TabHandle there) — omit it on any route that should
+      // keep rendering its own header instead.
+      { index: true, element: <HomePage />, handle: {} },
       { path: 'new', element: <CourseSearchPage /> },
       { path: 'new/manual', element: <ManualCourseForm /> },
       { path: 'new/:courseId', element: <CourseSetupPage /> },
-      { path: 'rounds', element: <RoundsPage /> },
+      { path: 'rounds', element: <RoundsPage />, handle: { screen: 'Rounds' } },
       { path: 'settings', element: <SettingsPage /> },
       {
         path: 'stats',
@@ -40,6 +43,7 @@ export const router = createBrowserRouter([
             <StatsPage />
           </Suspense>
         ),
+        handle: { screen: 'Stats' },
       },
     ],
   },
