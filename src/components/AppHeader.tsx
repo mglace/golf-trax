@@ -21,11 +21,15 @@ export function AppHeader({ screen }: AppHeaderProps) {
     <header className="pt-safe shrink-0 border-b border-slate-200 bg-slate-50">
       <div className="mx-auto flex h-14 w-full max-w-md items-center gap-2 px-4">
         <FlagIcon className="h-6 w-6 shrink-0 text-fairway-700" aria-hidden />
-        <span className="text-lg font-bold tracking-tight">GolfTrax</span>
+        {screen ? (
+          <span className="text-lg font-bold tracking-tight">GolfTrax</span>
+        ) : (
+          <h1 className="text-lg font-bold tracking-tight">GolfTrax</h1>
+        )}
         {screen && (
           <>
             <span aria-hidden className="mx-0.5 h-4 w-px bg-slate-200" />
-            <span className="text-sm font-medium text-slate-500">{screen}</span>
+            <h1 className="text-sm font-medium text-slate-500">{screen}</h1>
           </>
         )}
         <Link

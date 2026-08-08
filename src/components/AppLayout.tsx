@@ -29,12 +29,16 @@ const TAB_SCREEN_LABEL: Record<string, string | undefined> = {
  */
 export function AppLayout() {
   const { pathname } = useLocation()
-  const tabbed = pathname in TAB_SCREEN_LABEL
+  // Normalize a trailing slash before the lookup — React Router matches
+  // '/rounds/' to the same route as '/rounds', but a plain key lookup would
+  // treat them as different paths and silently drop the header.
+  const key = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
+  const tabbed = key in TAB_SCREEN_LABEL
 
   return (
     <div className="app-shell flex flex-col overflow-hidden">
       <SyncManager />
-      {tabbed && <AppHeader screen={TAB_SCREEN_LABEL[pathname]} />}
+      {tabbed && <AppHeader screen={TAB_SCREEN_LABEL[key]} />}
       <main
         className={[
           'mx-auto w-full max-w-md flex-1 overflow-y-auto overscroll-contain px-4 pb-6',
