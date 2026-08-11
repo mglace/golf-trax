@@ -47,6 +47,12 @@ jobs:
           VITE_AUTH0_DOMAIN: auth.golftrax.app
           VITE_AUTH0_CLIENT_ID: xRXVIPCv3eOMp3Frv2gsmrqFciRolSY0
           VITE_AUTH0_AUDIENCE: https://api.golftrax.app
+          # Google Analytics (GA4) measurement id — a public value, safe to
+          # inline in the client bundle. Set ONLY on push-to-main (production);
+          # empty on PR preview builds so branch/QA traffic never lands in the
+          # production property (empty → readAnalyticsConfig() returns null and
+          # the surface stays inert — see src/analytics/config.ts).
+          VITE_GA_MEASUREMENT_ID: ${{ github.event_name == 'push' && 'G-ZNX479XCWW' || '' }}
 
   close_pull_request:
     if: github.event_name == 'pull_request' && github.event.action == 'closed'
