@@ -112,11 +112,22 @@ into the public bundle. Production always runs in proxy mode.
 sync: it's active only when `VITE_GA_MEASUREMENT_ID` is set **and** it's a
 production build (`config.ts`). Unset → the whole surface is inert, `gtag.js`
 never loads, and nothing leaves the device, so `npm run dev`, Vitest, and
-Playwright never touch real metrics. `initAnalytics()` / `startPageTracking()`
-are wired once in `main.tsx`; page views fire on route changes and are collapsed
-to **route patterns** (`toRoutePattern` → `/round/:roundId`) so opaque round/
-course ids never reach Google. `trackEvent()` is available for future custom
-events. The measurement id is a public value, safe to inline.
+Playwright never touch real metrics. In CI the id is set **only on push-to-main**,
+not on PR preview builds (`azure-static-web-apps.yml`), so preview traffic never
+lands in the production property. `initAnalytics()` / `startPageTracking()` are
+wired once in `main.tsx`; page views fire on route changes and are collapsed to
+**route patterns** (`toRoutePattern` → `/round/:roundId`) so opaque round/course
+ids never reach Google. The sanitized pattern is installed as the default
+`page_location` via `gtag('set', …)`, so GA's own hits (`session_start`,
+`user_engagement`) inherit it too — not just the manual `page_view`. `trackEvent()`
+is available for future custom events. The measurement id is a public value, safe
+to inline.
+
+One property-side requirement the code can't enforce: GA4 Enhanced Measurement's
+"Page changes based on browser history events" must be **disabled** on the
+stream, since we track SPA navigations manually — otherwise GA fires its own
+`page_view` on `pushState` using the raw URL, re-introducing the id and
+double-counting.
 
 ### Sync engine (Phase 2) — client/server lockstep
 

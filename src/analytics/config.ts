@@ -16,8 +16,9 @@ export interface AnalyticsConfig {
 }
 
 /**
- * Read the analytics config from the environment. Exported (not just the frozen
- * {@link analyticsConfig}) so tests can exercise the gating with `vi.stubEnv`.
+ * Read the analytics config from the environment. Exported (not just the
+ * module-level {@link analyticsConfig}, which is evaluated once at import) so
+ * tests can exercise the gating directly with `vi.stubEnv`.
  */
 export function readAnalyticsConfig(): AnalyticsConfig | null {
   const measurementId = import.meta.env.VITE_GA_MEASUREMENT_ID
