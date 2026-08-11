@@ -8,6 +8,9 @@ interface ImportMetaEnv {
   readonly VITE_AUTH0_DOMAIN: string
   readonly VITE_AUTH0_CLIENT_ID: string
   readonly VITE_AUTH0_AUDIENCE: string
+  // Google Analytics (GA4) measurement id. Unset → analytics disabled. Only
+  // active in production builds (src/analytics/config.ts).
+  readonly VITE_GA_MEASUREMENT_ID: string
 }
 
 interface ImportMeta {

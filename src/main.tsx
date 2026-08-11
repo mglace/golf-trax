@@ -5,6 +5,8 @@ import { router } from './router'
 import { syncConfig } from './auth/authConfig'
 import { AuthContext, INERT } from './auth/authContext'
 import { registerServiceWorker } from './pwa/registerServiceWorker'
+import { initAnalytics } from './analytics/gtag'
+import { startPageTracking } from './analytics/pageTracking'
 import './index.css'
 
 const rootEl = document.getElementById('root')!
@@ -12,6 +14,12 @@ const rootEl = document.getElementById('root')!
 // Register the SW and keep pinned home-screen installs current (autoUpdate
 // reloads once a new version is found; this triggers the check on foreground).
 registerServiceWorker()
+
+// Optional Google Analytics — inert unless VITE_GA_MEASUREMENT_ID is set in a
+// production build (src/analytics/config.ts). Load gtag.js, then emit a
+// page_view on the initial load and on every subsequent route change.
+initAnalytics()
+startPageTracking(router)
 
 /**
  * Optional sync is gated at the root: a sync-enabled build dynamically imports

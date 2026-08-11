@@ -106,6 +106,18 @@ are recomputed on every write.
 **Never set `VITE_GOLF_API_KEY` in a production build** — it would inline the key
 into the public bundle. Production always runs in proxy mode.
 
+### Analytics (optional, build-time gated)
+
+`src/analytics/` adds Google Analytics (GA4) following the same gating pattern as
+sync: it's active only when `VITE_GA_MEASUREMENT_ID` is set **and** it's a
+production build (`config.ts`). Unset → the whole surface is inert, `gtag.js`
+never loads, and nothing leaves the device, so `npm run dev`, Vitest, and
+Playwright never touch real metrics. `initAnalytics()` / `startPageTracking()`
+are wired once in `main.tsx`; page views fire on route changes and are collapsed
+to **route patterns** (`toRoutePattern` → `/round/:roundId`) so opaque round/
+course ids never reach Google. `trackEvent()` is available for future custom
+events. The measurement id is a public value, safe to inline.
+
 ### Sync engine (Phase 2) — client/server lockstep
 
 This is the subtle part. The reconciliation rules (last-write-wins by
