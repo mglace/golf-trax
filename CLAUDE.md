@@ -123,6 +123,11 @@ ids never reach Google. The sanitized pattern is installed as the default
 is available for future custom events. The measurement id is a public value, safe
 to inline.
 
+To verify a live build, append **`?ga_debug=1`** to the URL: it sets GA4
+`debug_mode` so this client's hits show in GA4 DebugView (Admin → DebugView). It
+only flips `debug_mode` — it does **not** bypass the config gate, so dev/test
+builds with no id stay inert, and normal visitors (no param) are unaffected.
+
 One property-side requirement the code can't enforce: GA4 Enhanced Measurement's
 "Page changes based on browser history events" must be **disabled** on the
 stream, since we track SPA navigations manually — otherwise GA fires its own

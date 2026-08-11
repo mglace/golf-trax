@@ -42,6 +42,20 @@ function sanitizedLocation(pathname: string): string {
 }
 
 /**
+ * Whether the current URL opts into GA4 debug mode via `?ga_debug=1` (or
+ * `=true`). Pure so it can be unit-tested. This only flips `debug_mode` — it
+ * does NOT bypass the config gate in `config.ts`: analytics still activates
+ * only with a real measurement id in a production build, so dev/test builds
+ * stay inert regardless of the param. It exists so that, on a build where GA
+ * is genuinely live, appending `?ga_debug=1` routes hits into GA4 DebugView
+ * (Admin → DebugView) for verification, without the browser extension.
+ */
+export function wantsGaDebug(search: string): boolean {
+  const value = new URLSearchParams(search).get('ga_debug')
+  return value === '1' || value === 'true'
+}
+
+/**
  * Inject `gtag.js` and initialize GA4. Safe to call unconditionally and more
  * than once — it returns early when analytics is unconfigured, when there's no
  * DOM (SSR / tests), or when it has already run.
@@ -78,10 +92,19 @@ export function initAnalytics(): void {
     page_location: sanitizedLocation(window.location.pathname),
     page_title: document.title,
   })
+
+  const debug = wantsGaDebug(window.location.search)
   window.gtag('config', config.measurementId, {
     // We fire page_view ourselves on every route change (see trackPageView).
     send_page_view: false,
+    // `?ga_debug=1` → route this client's hits to GA4 DebugView for
+    // verification. Omitted entirely for normal visitors, so real reports are
+    // unaffected.
+    ...(debug ? { debug_mode: true } : {}),
   })
+  if (debug) {
+    console.info('[analytics] GA4 debug_mode enabled — hits go to DebugView.')
+  }
 }
 
 /**
