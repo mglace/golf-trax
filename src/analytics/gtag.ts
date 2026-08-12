@@ -135,9 +135,20 @@ export function trackPageView(pathname: string): void {
  * Record a custom GA4 event. A thin, guarded pass-through to `gtag('event')`
  * for domain events worth measuring (e.g. a completed round) — inert unless
  * analytics is configured. Inherits the sanitized `page_location` set above.
+ *
+ * Call sites fire this from inside the critical path — right after persisting a
+ * round and before navigating away (see CourseSetupPage / RoundSummaryPage). A
+ * dropped analytics hit is a best-effort side effect and must never surface to
+ * that path (e.g. stranding a persisted round on a swallowed error), so any
+ * throw from the live `gtag.js` is caught and ignored here rather than at each
+ * call site.
  */
 export function trackEvent(name: string, params?: Record<string, unknown>): void {
   const gtag = typeof window !== 'undefined' ? window.gtag : undefined
   if (!analyticsConfig || !gtag) return
-  gtag('event', name, params)
+  try {
+    gtag('event', name, params)
+  } catch {
+    // Best-effort: never let an analytics failure break app flow.
+  }
 }
