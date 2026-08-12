@@ -123,7 +123,21 @@ describe('initAnalytics (configured)', () => {
   })
 })
 
-describe('trackEvent resilience (best-effort, off the critical path)', () => {
+describe('trackEvent', () => {
+  it('pushes ["event", name, params] onto the dataLayer with params intact', async () => {
+    const { mod, dom } = await loadGtag({ measurementId: 'G-TEST123' })
+    mod.initAnalytics()
+
+    const params = { round_length: '18', hole_count: 18, is_complete: true, vs_par: -2 }
+    mod.trackEvent('round_completed', params)
+
+    const event = calls(dom.win)
+      .filter((c) => c[0] === 'event' && c[1] === 'round_completed')
+      .pop()
+    expect(event).toBeDefined()
+    expect(event?.[2]).toEqual(params)
+  })
+
   it('swallows a throw from the live gtag so it never breaks app flow', async () => {
     const { mod, dom } = await loadGtag({ measurementId: 'G-TEST123' })
     mod.initAnalytics()
