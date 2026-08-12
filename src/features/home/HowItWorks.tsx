@@ -14,9 +14,8 @@ const STEPS: Step[] = [
 ]
 
 /**
- * Brief onboarding for first-time visitors — a three-step "how it works" so a
- * newcomer understands the flow at a glance. Shown only on an empty round
- * library (see {@link HomePage}); returning players never see it.
+ * Brief three-step "how it works" primer so a newcomer understands the flow at
+ * a glance. Rendered by {@link HomePage} whenever the round library is empty.
  */
 export function HowItWorks() {
   return (

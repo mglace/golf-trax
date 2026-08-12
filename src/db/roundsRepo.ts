@@ -132,9 +132,11 @@ export async function countRounds(): Promise<number> {
 
 /**
  * Whether at least one live (non-tombstoned) round exists. Unlike
- * {@link countRounds}, this stops at the first match instead of reading and
- * deserializing every round, so it's a constant-cost check for gating UI (e.g.
- * the Home first-run onboarding) on the cold-start landing screen.
+ * {@link countRounds}, this stops at the first live round instead of reading
+ * and deserializing every record, so for a populated library it's far cheaper
+ * than a full count — the win that matters on the cold-start Home screen, which
+ * only needs "are there any rounds?". (The `deletedAt` predicate can't use an
+ * index, so an empty or all-tombstone table still scans fully.)
  */
 export async function hasAnyRound(): Promise<boolean> {
   const first = await db.rounds.filter((r) => !r.deletedAt).first()
