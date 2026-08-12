@@ -126,8 +126,17 @@ routes rather than relying on it. Each hit also carries a per-route
 title) stays readable instead of folding every route into one "GolfTrax" row.
 The sanitized pattern is installed as the default `page_location` via
 `gtag('set', …)`, so GA's own hits (`session_start`, `user_engagement`) inherit
-it too — not just the manual `page_view`. `trackEvent()` is available for future
-custom events. The measurement id is a public value, safe to inline.
+it too — not just the manual `page_view`. `trackEvent()` sends custom GA4
+events; two are wired today, both from the feature layer (never `db/`/`domain/`,
+which stay side-effect-free) and both carrying **only non-identifying
+dimensions** — no opaque round/course ids, matching the route-pattern rule
+above: `round_started` (params `round_length`, `hole_count`) when a draft round
+is created in Course Setup, and `round_completed` (params `round_length`,
+`hole_count`, `holes_entered`, `is_complete`, `total_score`, `vs_par`) when a
+round is finalized in Round Summary. Because saving a partially-scored round is
+supported, `total_score`/`vs_par` on `round_completed` reflect only the holes
+entered, so `holes_entered`/`is_complete` ride along to keep partial rounds
+separable in reports. The measurement id is a public value, safe to inline.
 
 To verify a live build, append **`?ga_debug=1`** to the URL: it sets GA4
 `debug_mode` so this client's hits show in GA4 DebugView (Admin → DebugView). It
