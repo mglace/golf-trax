@@ -123,6 +123,33 @@ describe('initAnalytics (configured)', () => {
   })
 })
 
+describe('trackEvent', () => {
+  it('pushes ["event", name, params] onto the dataLayer with params intact', async () => {
+    const { mod, dom } = await loadGtag({ measurementId: 'G-TEST123' })
+    mod.initAnalytics()
+
+    const params = { round_length: '18', hole_count: 18, is_complete: true, vs_par: -2 }
+    mod.trackEvent('round_completed', params)
+
+    const event = calls(dom.win)
+      .filter((c) => c[0] === 'event' && c[1] === 'round_completed')
+      .pop()
+    expect(event).toBeDefined()
+    expect(event?.[2]).toEqual(params)
+  })
+
+  it('swallows a throw from the live gtag so it never breaks app flow', async () => {
+    const { mod, dom } = await loadGtag({ measurementId: 'G-TEST123' })
+    mod.initAnalytics()
+    // Simulate gtag.js having loaded and its real implementation throwing —
+    // call sites fire trackEvent from inside the round create/finalize path.
+    dom.win.gtag = () => {
+      throw new Error('gtag boom')
+    }
+    expect(() => mod.trackEvent('round_completed', { hole_count: 18 })).not.toThrow()
+  })
+})
+
 describe('trackPageView sanitization (the privacy guarantee on the wire)', () => {
   it('sends the collapsed pattern as page_location, never the raw id', async () => {
     const uuid = '8f1e2d3c-0000-4a1b-9c2d-abcdef012345'

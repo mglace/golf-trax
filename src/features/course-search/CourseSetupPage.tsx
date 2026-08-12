@@ -7,6 +7,7 @@ import { ChevronLeftIcon, MapPinIcon, SpinnerIcon } from '@/components/icons'
 import { formatCourseName, formatLocation, findTee } from '@/domain/course'
 import { availableRoundLengths, ROUND_LENGTH_LABEL } from '@/domain/round'
 import { createDraftRound } from '@/db/roundsRepo'
+import { trackEvent } from '@/analytics/gtag'
 import type { RoundLength } from '@/db/types'
 import type { ApiCourse } from '@/api/types'
 
@@ -51,6 +52,12 @@ export function CourseSetupPage() {
     setStarting(true)
     try {
       const round = await createDraftRound(course, tee.gender, tee.teeName, roundLength)
+      // Non-identifying dimensions only — no opaque round/course ids reach GA
+      // (mirrors the route-pattern sanitization in analytics/gtag.ts).
+      trackEvent('round_started', {
+        round_length: round.roundLength,
+        hole_count: round.holes.length,
+      })
       navigate(`/round/${round.id}`)
     } catch {
       setStarting(false)

@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { getRound, finalizeRound, updateHoleInRound } from '@/db/roundsRepo'
 import { triggerSync } from '@/sync/controller'
+import { trackEvent } from '@/analytics/gtag'
 import { computeTotals, ROUND_LENGTH_LABEL } from '@/domain/round'
 import { ChevronLeftIcon, SpinnerIcon } from '@/components/icons'
 import { StatsWidget } from './StatsWidget'
@@ -65,6 +66,19 @@ export function RoundSummaryPage() {
     if (!round) return
     setSaving(true)
     await finalizeRound(round.id)
+    // Non-identifying aggregate metrics only — no opaque round/course ids reach
+    // GA (mirrors the route-pattern sanitization in analytics/gtag.ts).
+    // Saving a partially-scored round is supported (see the amber banner), so
+    // total_score/vs_par only reflect the holes actually entered; holes_entered
+    // and is_complete travel alongside so partial rounds stay separable in GA4.
+    trackEvent('round_completed', {
+      round_length: round.roundLength,
+      hole_count: round.holes.length,
+      holes_entered: totals.holesEntered,
+      is_complete: totals.isComplete,
+      total_score: totals.totalScore,
+      vs_par: totals.vsPar,
+    })
     // Best-effort: push the finalized round now if signed in (no-op otherwise).
     triggerSync()
     navigate('/rounds')

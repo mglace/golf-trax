@@ -114,6 +114,23 @@ export function initAnalytics(): void {
 }
 
 /**
+ * Dispatch to `gtag`, swallowing any throw from the live `gtag.js`. Both public
+ * tracking helpers fire from inside app flow — `trackEvent` right after
+ * persisting a round and before navigating (CourseSetupPage / RoundSummaryPage),
+ * `trackPageView` from the router `subscribe` callback during a navigation —
+ * where an uncaught throw could strand a persisted round or bubble out of a
+ * router subscriber. Analytics is a best-effort side effect, so a dropped hit
+ * must never surface to that path.
+ */
+function safeGtag(gtag: NonNullable<Window['gtag']>, ...args: unknown[]): void {
+  try {
+    gtag(...args)
+  } catch {
+    // Best-effort: never let an analytics failure break app flow.
+  }
+}
+
+/**
  * Record a page view for the given pathname. Updates the default
  * `page_location` to this route's sanitized pattern (and the matching
  * `page_title`) first, so every subsequent hit — this page_view and the
@@ -124,20 +141,22 @@ export function initAnalytics(): void {
 export function trackPageView(pathname: string): void {
   const gtag = typeof window !== 'undefined' ? window.gtag : undefined
   if (!analyticsConfig || !gtag) return
-  gtag('set', {
+  safeGtag(gtag, 'set', {
     page_location: sanitizedLocation(pathname),
     page_title: toRouteTitle(pathname),
   })
-  gtag('event', 'page_view')
+  safeGtag(gtag, 'event', 'page_view')
 }
 
 /**
  * Record a custom GA4 event. A thin, guarded pass-through to `gtag('event')`
  * for domain events worth measuring (e.g. a completed round) — inert unless
  * analytics is configured. Inherits the sanitized `page_location` set above.
+ * Failures are swallowed (see {@link safeGtag}), so a call from inside the round
+ * create/finalize path can never surface an analytics error to that flow.
  */
 export function trackEvent(name: string, params?: Record<string, unknown>): void {
   const gtag = typeof window !== 'undefined' ? window.gtag : undefined
   if (!analyticsConfig || !gtag) return
-  gtag('event', name, params)
+  safeGtag(gtag, 'event', name, params)
 }

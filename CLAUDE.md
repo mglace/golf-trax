@@ -126,19 +126,38 @@ routes rather than relying on it. Each hit also carries a per-route
 title) stays readable instead of folding every route into one "GolfTrax" row.
 The sanitized pattern is installed as the default `page_location` via
 `gtag('set', …)`, so GA's own hits (`session_start`, `user_engagement`) inherit
-it too — not just the manual `page_view`. `trackEvent()` is available for future
-custom events. The measurement id is a public value, safe to inline.
+it too — not just the manual `page_view`. `trackEvent()` sends custom GA4
+events; two are wired today, both from the feature layer (never `db/`/`domain/`,
+which stay side-effect-free) and both carrying **only non-identifying
+dimensions** — no opaque round/course ids, matching the route-pattern rule
+above: `round_started` (params `round_length`, `hole_count`) when a draft round
+is created in Course Setup, and `round_completed` (params `round_length`,
+`hole_count`, `holes_entered`, `is_complete`, `total_score`, `vs_par`) when a
+round is finalized in Round Summary. Because saving a partially-scored round is
+supported, `total_score`/`vs_par` on `round_completed` reflect only the holes
+entered, so `holes_entered`/`is_complete` ride along to keep partial rounds
+separable (see the custom-definitions note below for what surfaces them in
+reports). The measurement id is a public value, safe to inline.
 
 To verify a live build, append **`?ga_debug=1`** to the URL: it sets GA4
 `debug_mode` so this client's hits show in GA4 DebugView (Admin → DebugView). It
 only flips `debug_mode` — it does **not** bypass the config gate, so dev/test
 builds with no id stay inert, and normal visitors (no param) are unaffected.
 
-One property-side requirement the code can't enforce: GA4 Enhanced Measurement's
-"Page changes based on browser history events" must be **disabled** on the
-stream, since we track SPA navigations manually — otherwise GA fires its own
-`page_view` on `pushState` using the raw URL, re-introducing the id and
-double-counting.
+Two property-side requirements the code can't enforce:
+
+- GA4 Enhanced Measurement's "Page changes based on browser history events" must
+  be **disabled** on the stream, since we track SPA navigations manually —
+  otherwise GA fires its own `page_view` on `pushState` using the raw URL,
+  re-introducing the id and double-counting.
+- The custom event params above (`round_length`, `hole_count`, `holes_entered`,
+  `is_complete`, `total_score`, `vs_par`) only show up in standard reports and
+  explorations once each is registered under **Admin → Custom definitions** —
+  text params (`round_length`, `is_complete`) as custom dimensions, numeric ones
+  (`hole_count`, `holes_entered`, `total_score`, `vs_par`) as custom metrics.
+  Until then they're visible only in DebugView/Realtime and the BigQuery export,
+  and registration is **not** retroactive — data collected before a definition
+  exists is not backfilled.
 
 ### Sync engine (Phase 2) — client/server lockstep
 
