@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { PlusIcon } from '@/components/icons'
-import { countRounds } from '@/db/roundsRepo'
+import { hasAnyRound } from '@/db/roundsRepo'
 import { ResumeDraftCard } from './ResumeDraftCard'
 import { HowItWorks } from './HowItWorks'
 
@@ -17,10 +17,10 @@ import { HowItWorks } from './HowItWorks'
  * now the persistent {@link AppHeader} rendered once by {@link AppLayout}.
  */
 export function HomePage() {
-  // `undefined` while the count loads; only treat a *confirmed* empty library as
+  // `undefined` while the check loads; only treat a *confirmed* empty library as
   // a new user so the onboarding never flashes for someone with rounds.
-  const roundCount = useLiveQuery(() => countRounds(), [], undefined)
-  const isNewUser = roundCount === 0
+  const hasRounds = useLiveQuery(() => hasAnyRound(), [], undefined)
+  const isNewUser = hasRounds === false
 
   return (
     <div className="py-6">

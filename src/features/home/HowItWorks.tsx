@@ -1,8 +1,8 @@
-import type { SVGProps } from 'react'
+import type { ComponentType, SVGProps } from 'react'
 import { SearchIcon, FlagIcon, ChartIcon } from '@/components/icons'
 
 interface Step {
-  Icon: (props: SVGProps<SVGSVGElement>) => JSX.Element
+  Icon: ComponentType<SVGProps<SVGSVGElement>>
   title: string
   body: string
 }

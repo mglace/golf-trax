@@ -130,6 +130,17 @@ export async function countRounds(): Promise<number> {
   return db.rounds.filter((r) => !r.deletedAt).count()
 }
 
+/**
+ * Whether at least one live (non-tombstoned) round exists. Unlike
+ * {@link countRounds}, this stops at the first match instead of reading and
+ * deserializing every round, so it's a constant-cost check for gating UI (e.g.
+ * the Home first-run onboarding) on the cold-start landing screen.
+ */
+export async function hasAnyRound(): Promise<boolean> {
+  const first = await db.rounds.filter((r) => !r.deletedAt).first()
+  return first !== undefined
+}
+
 /** Finalize a draft: mark complete, refresh totals, stamp the course as played. */
 export async function finalizeRound(id: string): Promise<void> {
   const round = await db.rounds.get(id)
