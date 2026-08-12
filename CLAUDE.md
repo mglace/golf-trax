@@ -117,11 +117,17 @@ not on PR preview builds (`azure-static-web-apps.yml`), so preview traffic never
 lands in the production property. `initAnalytics()` / `startPageTracking()` are
 wired once in `main.tsx`; page views fire on route changes and are collapsed to
 **route patterns** (`toRoutePattern` → `/round/:roundId`) so opaque round/course
-ids never reach Google. The sanitized pattern is installed as the default
-`page_location` via `gtag('set', …)`, so GA's own hits (`session_start`,
-`user_engagement`) inherit it too — not just the manual `page_view`. `trackEvent()`
-is available for future custom events. The measurement id is a public value, safe
-to inline.
+ids never reach Google. Any path without an explicit rule still has id-looking
+segments (uuid / numeric / hex / digit-bearing token) collapsed to `:id` as a
+best-effort net — but add a named rule in `toRoutePattern` for new id-bearing
+routes rather than relying on it. Each hit also carries a per-route
+`page_title` from `toRouteTitle` (e.g. `Round entry`), **not** the static
+`document.title`, so GA4's default "Pages and screens" report (which groups by
+title) stays readable instead of folding every route into one "GolfTrax" row.
+The sanitized pattern is installed as the default `page_location` via
+`gtag('set', …)`, so GA's own hits (`session_start`, `user_engagement`) inherit
+it too — not just the manual `page_view`. `trackEvent()` is available for future
+custom events. The measurement id is a public value, safe to inline.
 
 To verify a live build, append **`?ga_debug=1`** to the URL: it sets GA4
 `debug_mode` so this client's hits show in GA4 DebugView (Admin → DebugView). It

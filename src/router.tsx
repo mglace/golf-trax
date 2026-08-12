@@ -24,9 +24,10 @@ const StatsPage = lazy(() =>
  *
  * NOTE: when adding a route that carries an opaque id (`:something`), add a
  * matching rule to `toRoutePattern` in `src/analytics/routePath.ts` so the id
- * is collapsed before it reaches Google Analytics. The normalizer fails closed
- * (unknown id-looking segments become `:id`), but a named rule keeps the GA
- * reports readable.
+ * is collapsed before it reaches Google Analytics. The normalizer collapses
+ * common id shapes (uuid / numeric / hex / digit-bearing token) as a best-effort
+ * safety net, but a named rule is what reliably collapses the id and keeps the
+ * GA reports readable.
  */
 export const router = createBrowserRouter([
   {

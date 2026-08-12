@@ -50,9 +50,18 @@ describe('toRoutePattern', () => {
       expect(toRoutePattern('/widget/deadbeefcafe0001')).toBe('/widget/:id')
     })
 
+    it('collapses long digit-bearing tokens (base64url / nanoid style)', () => {
+      // A hypothetical /share/:token where the token isn't uuid/numeric/hex.
+      expect(toRoutePattern('/share/A1bcDEf2ghIJk3')).toBe('/share/:id')
+      expect(toRoutePattern('/share/vX9_kQ2mB4tZpLrN0')).toBe('/share/:id')
+    })
+
     it('leaves word-like literal segments untouched', () => {
       expect(toRoutePattern('/course/search')).toBe('/course/search')
       expect(toRoutePattern('/some/deep/settings/page')).toBe('/some/deep/settings/page')
+      // A long lowercase word-slug with no digit is intentionally left alone
+      // (best-effort net; id-bearing routes get a named rule instead).
+      expect(toRoutePattern('/course/privacy-policy')).toBe('/course/privacy-policy')
     })
 
     it('never forwards a bare uuid/numeric id verbatim on an unknown route', () => {
@@ -79,5 +88,10 @@ describe('toRouteTitle', () => {
 
   it('falls back to the collapsed pattern for routes without an explicit label', () => {
     expect(toRouteTitle('/course/12345')).toBe('/course/:id')
+  })
+
+  it('resolves the label case-insensitively (React Router matches that way)', () => {
+    expect(toRouteTitle('/Rounds')).toBe('Rounds')
+    expect(toRouteTitle('/STATS')).toBe('Stats')
   })
 })
