@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { getRound, finalizeRound, updateHoleInRound } from '@/db/roundsRepo'
 import { triggerSync } from '@/sync/controller'
+import { trackEvent } from '@/analytics/gtag'
 import { computeTotals, ROUND_LENGTH_LABEL } from '@/domain/round'
 import { ChevronLeftIcon, SpinnerIcon } from '@/components/icons'
 import { StatsWidget } from './StatsWidget'
@@ -65,6 +66,14 @@ export function RoundSummaryPage() {
     if (!round) return
     setSaving(true)
     await finalizeRound(round.id)
+    // Non-identifying aggregate metrics only — no opaque round/course ids reach
+    // GA (mirrors the route-pattern sanitization in analytics/gtag.ts).
+    trackEvent('round_completed', {
+      round_length: round.roundLength,
+      hole_count: round.holes.length,
+      total_score: totals.totalScore,
+      vs_par: totals.vsPar,
+    })
     // Best-effort: push the finalized round now if signed in (no-op otherwise).
     triggerSync()
     navigate('/rounds')
