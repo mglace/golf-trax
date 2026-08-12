@@ -1,5 +1,5 @@
 import { analyticsConfig } from './config'
-import { toRoutePattern } from './routePath'
+import { toRoutePattern, toRouteTitle } from './routePath'
 
 /**
  * The side-effecting Google Analytics (GA4) glue: loads `gtag.js` on demand and
@@ -29,8 +29,12 @@ import { toRoutePattern } from './routePath'
 
 declare global {
   interface Window {
-    dataLayer: unknown[]
-    gtag: (...args: unknown[]) => void
+    // Optional: these exist only after initAnalytics() has run in a configured
+    // build. Declaring them optional keeps the `!window.gtag` guards below
+    // honest and stops unrelated code from calling window.gtag() with no type
+    // error before it's wired up.
+    dataLayer?: unknown[]
+    gtag?: (...args: unknown[]) => void
   }
 }
 
@@ -67,14 +71,16 @@ export function initAnalytics(): void {
   if (initialized) return
   initialized = true
 
-  window.dataLayer = window.dataLayer || []
+  // Capture the array locally so the closure below doesn't have to re-narrow
+  // the now-optional window.dataLayer on every call (it's the same array).
+  const dataLayer = (window.dataLayer = window.dataLayer ?? [])
   // gtag pushes its `arguments` object (not an array) onto the dataLayer; the
   // GA library reads it positionally, so preserve that exact shape. The
   // suppression must sit on the `arguments` line itself: prefer-rest-params is
   // enabled repo-wide and a real array is not an equivalent substitute here.
   window.gtag = function gtag() {
     // eslint-disable-next-line prefer-rest-params
-    window.dataLayer.push(arguments)
+    dataLayer.push(arguments)
   }
 
   const script = document.createElement('script')
@@ -90,7 +96,7 @@ export function initAnalytics(): void {
   // the raw landing URL.
   window.gtag('set', {
     page_location: sanitizedLocation(window.location.pathname),
-    page_title: document.title,
+    page_title: toRouteTitle(window.location.pathname),
   })
 
   const debug = wantsGaDebug(window.location.search)
@@ -109,18 +115,20 @@ export function initAnalytics(): void {
 
 /**
  * Record a page view for the given pathname. Updates the default
- * `page_location` to this route's sanitized pattern first, so every subsequent
- * hit (this page_view and the engagement events GA sends on its own) reports
- * the pattern rather than the concrete URL. GA4 derives the report path from
- * `page_location`, so no `page_path` is sent.
+ * `page_location` to this route's sanitized pattern (and the matching
+ * `page_title`) first, so every subsequent hit — this page_view and the
+ * engagement events GA sends on its own — reports the pattern rather than the
+ * concrete URL. GA4 derives the report path from `page_location`, so no
+ * `page_path` is sent.
  */
 export function trackPageView(pathname: string): void {
-  if (!analyticsConfig || typeof window === 'undefined' || !window.gtag) return
-  window.gtag('set', {
+  const gtag = typeof window !== 'undefined' ? window.gtag : undefined
+  if (!analyticsConfig || !gtag) return
+  gtag('set', {
     page_location: sanitizedLocation(pathname),
-    page_title: document.title,
+    page_title: toRouteTitle(pathname),
   })
-  window.gtag('event', 'page_view')
+  gtag('event', 'page_view')
 }
 
 /**
@@ -129,6 +137,7 @@ export function trackPageView(pathname: string): void {
  * analytics is configured. Inherits the sanitized `page_location` set above.
  */
 export function trackEvent(name: string, params?: Record<string, unknown>): void {
-  if (!analyticsConfig || typeof window === 'undefined' || !window.gtag) return
-  window.gtag('event', name, params)
+  const gtag = typeof window !== 'undefined' ? window.gtag : undefined
+  if (!analyticsConfig || !gtag) return
+  gtag('event', name, params)
 }

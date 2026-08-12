@@ -21,6 +21,13 @@ const StatsPage = lazy(() =>
  * Route map. The bottom-nav tabs (Home / Rounds / Stats) and the course-search
  * flow render inside {@link AppLayout}. The focused round-entry and summary
  * flows are top-level (full-screen, no bottom tabs) to maximize on-course space.
+ *
+ * NOTE: when adding a route that carries an opaque id (`:something`), add a
+ * matching rule to `toRoutePattern` in `src/analytics/routePath.ts` so the id
+ * is collapsed before it reaches Google Analytics. The normalizer collapses
+ * common id shapes (uuid / numeric / hex / digit-bearing token) as a best-effort
+ * safety net, but a named rule is what reliably collapses the id and keeps the
+ * GA reports readable.
  */
 export const router = createBrowserRouter([
   {
