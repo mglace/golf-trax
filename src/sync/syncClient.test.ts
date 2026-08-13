@@ -305,16 +305,17 @@ describe('status paths', () => {
     expect((await db.rounds.get('r1'))?.dirty).toBe(1)
   })
 
-  it('reports "error" (never rejects) when the token provider throws', async () => {
+  it('treats a throwing token provider as paused, not an error (never rejects)', async () => {
     await db.rounds.add(round({ id: 'r1' }))
-    // A future auth adapter that throws instead of resolving null must still be
-    // swallowed into a status — sync() must never reject (§9). No token was
-    // obtained, so nothing is sent.
+    // A future auth adapter that throws (e.g. a dead refresh token) is the same
+    // "no valid token" case as a null return — it must resolve to `paused`, not
+    // the backoff-worthy `error`, so we never hot-loop an unrefreshable token
+    // (§9). sync() must never reject, and no token means nothing is sent.
     const status = await sync(async () => {
       throw new Error('auth down')
     }, USER)
-    expect(status).toBe('error')
-    expect(useSyncStore.getState().status).toBe('error')
+    expect(status).toBe('paused')
+    expect(useSyncStore.getState().status).toBe('paused')
     expect((global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0)
     expect((await db.rounds.get('r1'))?.dirty).toBe(1)
   })
