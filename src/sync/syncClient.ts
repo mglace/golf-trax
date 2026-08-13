@@ -186,14 +186,18 @@ let inFlight: Promise<SyncStatus> | null = null
 
 async function runSync(getToken: GetToken, userId: string): Promise<SyncStatus> {
   const store = useSyncStore.getState()
-  const token = await getToken()
-  if (!token) {
-    // No valid token (offline/expired) — sync paused, app keeps working (§4).
-    store.setStatus('paused')
-    return 'paused'
-  }
-  store.setStatus('syncing')
+  // Token acquisition is inside the try so a provider that *rejects* (not just
+  // one that resolves null) is swallowed into a status too — `sync()` must never
+  // reject, or the retry bridge's un-`.catch`-ed `void sync(...).then(...)` would
+  // leave an unhandled rejection and skip backoff (§4, §9).
   try {
+    const token = await getToken()
+    if (!token) {
+      // No valid token (offline/expired) — sync paused, app keeps working (§4).
+      store.setStatus('paused')
+      return 'paused'
+    }
+    store.setStatus('syncing')
     await pushChanges(token, userId)
     await pullChanges(token, userId)
     await reapTombstones()

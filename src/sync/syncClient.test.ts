@@ -305,6 +305,20 @@ describe('status paths', () => {
     expect((await db.rounds.get('r1'))?.dirty).toBe(1)
   })
 
+  it('reports "error" (never rejects) when the token provider throws', async () => {
+    await db.rounds.add(round({ id: 'r1' }))
+    // A future auth adapter that throws instead of resolving null must still be
+    // swallowed into a status — sync() must never reject (§9). No token was
+    // obtained, so nothing is sent.
+    const status = await sync(async () => {
+      throw new Error('auth down')
+    }, USER)
+    expect(status).toBe('error')
+    expect(useSyncStore.getState().status).toBe('error')
+    expect((global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0)
+    expect((await db.rounds.get('r1'))?.dirty).toBe(1)
+  })
+
   it('reports "error" when the backend rejects a push, leaving the round dirty', async () => {
     await db.rounds.add(round({ id: 'r1' }))
     // Push fails hard; the engine swallows it into a status and never throws.
@@ -333,8 +347,35 @@ describe('status paths', () => {
   })
 })
 
-describe('shared-device lifecycle (no cross-account leakage, §11.5)', () => {
-  it('adopts A, syncs, then fully isolates B on sign-out/sign-in', async () => {
+describe('auth header', () => {
+  it('sends the bearer via X-GolfTrax-Authorization on every /api/sync call', async () => {
+    // SWA overwrites the standard Authorization header on managed-function
+    // requests, so the bearer must ride in the custom header on both push and
+    // pull. Dropping it breaks all authenticated sync in production while every
+    // local/proxy-mode run stays green — exactly the kind of glue this suite guards.
+    await db.rounds.add(round({ id: 'r1' })) // forces a push
+    server.seed({ ...round({ id: 'r2' }), version: 1 }) // ensures a pull returns data
+    await sync(getToken, USER)
+
+    const calls = (global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.filter((c) =>
+      String(c[0]).includes('/api/sync/'),
+    )
+    expect(calls.length).toBeGreaterThanOrEqual(2) // at least one push + one pull
+    for (const [, init] of calls) {
+      const headers = (init?.headers ?? {}) as Record<string, string>
+      expect(headers['X-GolfTrax-Authorization']).toBe('Bearer test-token')
+    }
+  })
+})
+
+describe('shared-device lifecycle — client logout isolation (§11.5)', () => {
+  // Scope note: this guards the *client-side* half of shared-device safety — that
+  // `clearAccountRounds` wipes A's rows on sign-out so they never persist into
+  // B's session. It does NOT prove server-side cross-account scoping: the client
+  // has no per-user pull filter to regress (it stamps `owner = accountId` on
+  // whatever it receives), so the real cross-partition defense is the backend's
+  // JWT-scoped query, which belongs to api/ coverage — not this test.
+  it('adopts A, syncs, then keeps none of A on B after sign-out/sign-in', async () => {
     const A = 'auth0|alice'
     const B = 'auth0|bob'
 
@@ -370,9 +411,11 @@ describe('shared-device lifecycle (no cross-account leakage, §11.5)', () => {
     expect(cleared?.userId).toBeNull()
     expect(cleared?.lastPulledTs).toBe(0)
 
-    // 5. Sign in as B. B's server partition is independent — model it with a
-    //    fresh server holding only B's data. Signing in must surface B's rounds
-    //    and must never resurrect any of A's.
+    // 5. Sign in as B. A fresh server stands in for B's own JWT-scoped partition
+    //    (the real server would never return A's docs to B's token). The point of
+    //    this step is the client side: after the step-4 wipe, signing in as B must
+    //    surface B's rounds and hold none of A's — i.e. `clearAccountRounds` really
+    //    cleared them, not merely masked them behind the cursor reset.
     server = new FakeServer()
     installFetch(server)
     server.seed({ ...round({ id: 'b-round', notes: 'bob only' }), version: 1 })
