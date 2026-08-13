@@ -6,6 +6,7 @@ import type { Round } from '@/db/types'
 import { decidePush, isCursorStale, versionOf } from '@/domain/sync'
 import { sync, prepareMerge, clearAccountRounds, reapTombstones } from './syncClient'
 import { setSyncUser } from './syncState'
+import { useSyncStore } from './syncStore'
 
 /**
  * Integration tests for the sync engine glue (Dexie + fetch), which the pure
@@ -142,6 +143,8 @@ beforeEach(async () => {
   await db.syncState.clear()
   server = new FakeServer()
   installFetch(server)
+  // Reset the in-memory status store so status assertions read absolute values.
+  useSyncStore.setState({ status: 'signed-out', lastSyncedAt: null })
 })
 
 describe('push', () => {
@@ -286,5 +289,168 @@ describe('prepareMerge (§6.4)', () => {
     await prepareMerge()
     expect((await db.rounds.get('c'))?.dirty).toBe(1)
     expect((await db.rounds.get('d'))?.dirty).toBe(0)
+  })
+})
+
+describe('status paths', () => {
+  it('reports "paused" and makes no network call when no token is available', async () => {
+    // A dirty, pushable round that must NOT be sent while paused.
+    await db.rounds.add(round({ id: 'r1' }))
+    const status = await sync(async () => null, USER)
+    expect(status).toBe('paused')
+    expect(useSyncStore.getState().status).toBe('paused')
+    // The whole point of "paused": nothing leaves the device (§4).
+    expect((global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0)
+    // The round stays dirty (unpushed) so it syncs once a token is available again.
+    expect((await db.rounds.get('r1'))?.dirty).toBe(1)
+  })
+
+  it('reports "error" when the backend rejects a push, leaving the round dirty', async () => {
+    await db.rounds.add(round({ id: 'r1' }))
+    // Push fails hard; the engine swallows it into a status and never throws.
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), 'http://localhost')
+      if (url.pathname === '/api/sync/push') {
+        return { ok: false, status: 500, json: async () => ({}) } as unknown as Response
+      }
+      return { ok: true, status: 200, json: async () => server.pull(0, '', 100) } as unknown as Response
+    }) as unknown as typeof fetch
+
+    const status = await sync(getToken, USER)
+    expect(status).toBe('error')
+    expect(useSyncStore.getState().status).toBe('error')
+    // Left dirty so a backoff retry can re-push it.
+    expect((await db.rounds.get('r1'))?.dirty).toBe(1)
+  })
+
+  it('reports "synced" and stamps lastSyncedAt on a clean round-trip', async () => {
+    server.seed({ ...round({ id: 'r1' }), version: 1 })
+    const status = await sync(getToken, USER)
+    expect(status).toBe('synced')
+    const store = useSyncStore.getState()
+    expect(store.status).toBe('synced')
+    expect(typeof store.lastSyncedAt).toBe('number')
+  })
+})
+
+describe('shared-device lifecycle (no cross-account leakage, §11.5)', () => {
+  it('adopts A, syncs, then fully isolates B on sign-out/sign-in', async () => {
+    const A = 'auth0|alice'
+    const B = 'auth0|bob'
+
+    // 1. Anonymous use: one completed local round + one in-progress draft.
+    await db.rounds.bulkAdd([
+      round({ id: 'a-round', owner: 'local', dirty: 0 }),
+      round({ id: 'a-draft', status: 'draft', owner: 'local', dirty: 0 }),
+    ])
+
+    // 2. Sign in as A: merge adopts local completed rounds; first sync pushes them.
+    await setSyncUser(A)
+    await prepareMerge()
+    await sync(getToken, A)
+    const adopted = await db.rounds.get('a-round')
+    expect(adopted?.owner).toBe(A)
+    expect(adopted?.dirty).toBe(0)
+    expect(server.docs.has('a-round')).toBe(true)
+    // Drafts never sync and never leave the device (§11.11).
+    expect(server.docs.has('a-draft')).toBe(false)
+
+    // 3. Another of A's devices writes a round; A pulls it here.
+    server.seed({ ...round({ id: 'a-fromB', notes: 'phone' }), version: 1 })
+    await sync(getToken, A)
+    expect((await db.rounds.get('a-fromB'))?.owner).toBe(A)
+
+    // 4. Sign out on this shared device: A's account rounds are wiped, the
+    //    local-only draft is kept, and the cursor resets.
+    await clearAccountRounds()
+    expect(await db.rounds.get('a-round')).toBeUndefined()
+    expect(await db.rounds.get('a-fromB')).toBeUndefined()
+    expect(await db.rounds.get('a-draft')).toBeDefined()
+    const cleared = await db.syncState.get('sync')
+    expect(cleared?.userId).toBeNull()
+    expect(cleared?.lastPulledTs).toBe(0)
+
+    // 5. Sign in as B. B's server partition is independent — model it with a
+    //    fresh server holding only B's data. Signing in must surface B's rounds
+    //    and must never resurrect any of A's.
+    server = new FakeServer()
+    installFetch(server)
+    server.seed({ ...round({ id: 'b-round', notes: 'bob only' }), version: 1 })
+    await setSyncUser(B)
+    await sync(getToken, B)
+
+    expect((await db.rounds.get('b-round'))?.owner).toBe(B)
+    expect(await db.rounds.get('a-round')).toBeUndefined()
+    expect(await db.rounds.get('a-fromB')).toBeUndefined()
+    // The anonymous draft still belongs to the device, untouched by either account.
+    expect((await db.rounds.get('a-draft'))?.owner).toBe('local')
+  })
+})
+
+describe('invalid-ack quarantine', () => {
+  it('clears dirty but keeps the round, and never re-pushes it', async () => {
+    await db.rounds.add(round({ id: 'bad', owner: USER, version: 1 }))
+    // Server rejects the push as structurally invalid.
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), 'http://localhost')
+      if (url.pathname === '/api/sync/push') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ results: [{ id: 'bad', invalid: true }] }),
+        } as unknown as Response
+      }
+      return { ok: true, status: 200, json: async () => server.pull(0, '', 100) } as unknown as Response
+    }) as unknown as typeof fetch
+
+    await sync(getToken, USER)
+    const quarantined = await db.rounds.get('bad')
+    expect(quarantined).toBeDefined() // still visible / exportable
+    expect(quarantined?.dirty).toBe(0) // won't re-push every cycle
+
+    // A second run against the real server confirms it is not resent.
+    installFetch(server)
+    await sync(getToken, USER)
+    expect(server.docs.has('bad')).toBe(false)
+  })
+})
+
+describe('single-flight coalescing', () => {
+  it('coalesces concurrent triggers into one push/pull round-trip', async () => {
+    await db.rounds.add(round({ id: 'r1' })) // one pushable round
+    const p1 = sync(getToken, USER)
+    const p2 = sync(getToken, USER)
+    expect(p1).toBe(p2) // same in-flight promise, not a second run
+    await Promise.all([p1, p2])
+
+    const calls = (global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls
+    const pushes = calls.filter((c) => String(c[0]).includes('/api/sync/push'))
+    const pulls = calls.filter((c) => String(c[0]).includes('/api/sync/pull'))
+    expect(pushes.length).toBe(1)
+    expect(pulls.length).toBe(1)
+  })
+})
+
+describe('compare-and-clear under a mid-flight edit (§11.4)', () => {
+  it('keeps dirty set when the round changes between push and ack', async () => {
+    await db.rounds.add(round({ id: 'r1', owner: USER, version: 1 }))
+    // Simulate the user editing the round while its push is in flight: mutate the
+    // local row during the push request, before the ack is reconciled.
+    global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input), 'http://localhost')
+      if (url.pathname === '/api/sync/push') {
+        const payload = server.push(JSON.parse(String(init?.body)))
+        await db.rounds.update('r1', { updatedAt: '2026-07-02T00:00:00.000Z' })
+        return { ok: true, status: 200, json: async () => payload } as unknown as Response
+      }
+      return { ok: true, status: 200, json: async () => server.pull(0, '', 100) } as unknown as Response
+    }) as unknown as typeof fetch
+
+    await sync(getToken, USER)
+    const r = await db.rounds.get('r1')
+    // Ownership is adopted from the ack, but dirty stays 1 so the newer edit is
+    // pushed on the next cycle — the compare-and-clear guard (§11.4).
+    expect(r?.owner).toBe(USER)
+    expect(r?.dirty).toBe(1)
   })
 })

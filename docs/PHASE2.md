@@ -311,8 +311,22 @@ interval while the app is foregrounded. All sync is best-effort and idempotent.
 - **Logout on a shared device** — **resolved** in §11.5 (clear `owner === userId`
   rounds, keep `owner === 'local'`); the schema field lands in 2b, the behavior
   in 2c.
-- **Token refresh offline** — still open: define the exact "paused" state and
-  resume behavior so the app is never blocked by an expired token. Tracked to 2c.
+- **Token refresh offline** — **resolved** (2c). The client treats "no valid
+  token" as a distinct **`paused`** status, never an error: `runSync` acquires
+  the token first (`getToken()` → `getAccessTokenSilently()`), and a `null` token
+  sets `paused` and returns **without touching the network** — the local UI keeps
+  working (§4). `paused` deliberately does **not** back off (that would hot-loop
+  against an unrefreshable/expired token); the controller cancels any pending
+  retry and sync **resumes on the next passive trigger**: reconnect, the 60s
+  foreground-visible interval, or an interactive re-login. A device that is
+  offline *and* holding an expired token surfaces as `offline` (the online check
+  short-circuits before `getToken`) and re-derives correctly on reconnect. This
+  contract is now locked by tests: the engine paths in
+  `src/sync/syncClient.test.ts` (`paused` makes no network call; `error` leaves
+  rounds dirty for retry) and the scheduler in `src/sync/controller.test.ts`
+  (error → exponential capped backoff; `paused`/`synced`/`offline` schedule no
+  retry). The logout-on-shared-device rule (§11.5) is likewise covered
+  end-to-end by the shared-device lifecycle test.
 - **Cost/ops** — serverless Cosmos + an Auth0 app add a (small) bill and an
   operational surface a local-only app didn't have. Cost check + Auth0
   passwordless/email-provider confirmation are now a **2a pre-flight** (§11.7).
