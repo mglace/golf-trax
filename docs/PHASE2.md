@@ -322,8 +322,12 @@ interval while the app is foregrounded. All sync is best-effort and idempotent.
   offline *and* holding an expired token surfaces as `offline` (the online check
   short-circuits before `getToken`) and re-derives correctly on reconnect. This
   contract is now locked by tests: the engine paths in
-  `src/sync/syncClient.test.ts` (`paused` makes no network call; `error` leaves
-  rounds dirty for retry) and the scheduler in `src/sync/controller.test.ts`
+  `src/sync/syncClient.test.ts` (`paused` makes no network call; a token provider
+  that *rejects* is treated as no-token → `paused` — the same as a `null` return,
+  never an unhandled rejection and never a backoff `error` — since token
+  acquisition is caught in `runSync`; a genuine push/pull failure leaves rounds
+  dirty as `error`; every `/api/sync/*` call carries the `X-GolfTrax-Authorization`
+  bearer) and the scheduler in `src/sync/controller.test.ts`
   (error → exponential capped backoff; `paused`/`synced`/`offline` schedule no
   retry). The logout-on-shared-device rule (§11.5) is likewise covered
   end-to-end by the shared-device lifecycle test.

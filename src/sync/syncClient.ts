@@ -186,7 +186,18 @@ let inFlight: Promise<SyncStatus> | null = null
 
 async function runSync(getToken: GetToken, userId: string): Promise<SyncStatus> {
   const store = useSyncStore.getState()
-  const token = await getToken()
+  // Acquire the token in its own try so a provider that *rejects* is treated as
+  // "no valid token" — the same case a null return covers (§9) — rather than
+  // escaping as an unhandled rejection through the controller's un-`.catch`-ed
+  // `void sync(...).then(...)`. A dead refresh token can surface either way, and
+  // both route to `paused` (no backoff) so we never hot-loop an unrefreshable
+  // token; only a genuine push/pull failure below is a backoff-worthy `error`.
+  let token: string | null
+  try {
+    token = await getToken()
+  } catch {
+    token = null
+  }
   if (!token) {
     // No valid token (offline/expired) — sync paused, app keeps working (§4).
     store.setStatus('paused')
