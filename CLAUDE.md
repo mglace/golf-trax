@@ -158,9 +158,14 @@ matching the route-pattern rule above:
 - `cloud_prompt_shown` / `cloud_prompt_dismissed` / `cloud_signin_started`
   (param `rounds_saved`; `cloud_prompt_dismissed` also carries `is_permanent`)
   — the post-save cloud-prompt funnel, fired from Round Summary. Together they
-  give the offer→decline→redirect rates the prompt's cadence should be tuned on,
+  give the offer→decline→attempt rates the prompt's cadence should be tuned on,
   and `is_permanent` separates "not now" from "don't ask again" so the opt-out
   rate — the signal that the prompt is wearing out its welcome — stays visible.
+  `cloud_signin_started` counts an **attempt, at most once per prompt**: the
+  redirect can't be confirmed from the page (on success the browser has already
+  navigated away), so a hand-off that fails before navigation still counts, and
+  retries after a failure are deliberately not re-reported — otherwise one
+  prompt could out-count its own impression.
 
 See the custom-definitions note below for what surfaces these params in reports.
 The measurement id is a public value, safe to inline.

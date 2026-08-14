@@ -40,11 +40,12 @@ export function RoundSummaryPage() {
   const [cloudPrompt, setCloudPrompt] = useState<{ count: number; repeat: boolean } | null>(
     null,
   )
-  // Whether the current prompt already reported `cloud_signin_started`. The
-  // hand-off to Auth0 is async and can run long on a bad connection, and Escape
-  // and the backdrop stay live throughout (deliberately — see below), so without
-  // this one prompt could report both a start and a decline.
-  const signInStartedRef = useRef(false)
+  // Where the current prompt's sign-in hand-off has got to. Three states because
+  // two different rules key off it with different lifetimes: analytics must
+  // report at most one attempt per prompt (so `failed` never returns to `none`),
+  // while the dismissal guard applies only while a redirect might still land (so
+  // only `in-flight` suppresses).
+  const signInStateRef = useRef<'none' | 'in-flight' | 'failed'>('none')
 
   const [loaded, setLoaded] = useState(false)
   useEffect(() => {
@@ -136,7 +137,7 @@ export function RoundSummaryPage() {
         // asked again at the same milestone.
         await recordCloudPromptShown(completedCount)
         trackEvent('cloud_prompt_shown', { rounds_saved: completedCount })
-        signInStartedRef.current = false
+        signInStateRef.current = 'none'
         setCloudPrompt({ count: completedCount, repeat: isRepeatCloudPrompt(prefs) })
         setSaving(false)
         return
@@ -161,7 +162,7 @@ export function RoundSummaryPage() {
   // decline; CLAUDE.md says this funnel is what the cadence gets tuned on, so
   // suppress the decline rather than the exit.
   function dismissCloudPrompt(permanent = false) {
-    if (!signInStartedRef.current) {
+    if (signInStateRef.current !== 'in-flight') {
       trackEvent('cloud_prompt_dismissed', {
         rounds_saved: cloudPrompt?.count ?? 0,
         is_permanent: permanent,
@@ -192,8 +193,15 @@ export function RoundSummaryPage() {
     } catch {
       /* presentation only — proceed to sign-in regardless */
     }
-    trackEvent('cloud_signin_started', { rounds_saved: cloudPrompt?.count ?? 0 })
-    signInStartedRef.current = true
+    // Once per prompt, not once per attempt: after a failed hand-off the user can
+    // retry from the modal, and re-reporting would let one prompt's redirect rate
+    // exceed its own impression. The event necessarily counts an attempt rather
+    // than a confirmed redirect — on success the browser has navigated away
+    // before we could observe it — which is how CLAUDE.md describes it.
+    if (signInStateRef.current === 'none') {
+      trackEvent('cloud_signin_started', { rounds_saved: cloudPrompt?.count ?? 0 })
+    }
+    signInStateRef.current = 'in-flight'
     try {
       // Leaves the app for Auth0's hosted login, pre-filled with this address.
       await login({ email })
@@ -202,7 +210,11 @@ export function RoundSummaryPage() {
       // and the user is back in the modal: a decline from here is a real
       // decline, and must report as one. Only an *in-flight* hand-off suppresses
       // the dismissal.
-      signInStartedRef.current = false
+      signInStateRef.current = 'failed'
+      // Keep the persisted half of the hand-off state in step with the ref —
+      // otherwise the flag survives, and a later unrelated sign-in from Settings
+      // greets the user with a banner for a post-save sign-in that never landed.
+      void setPendingSignIn(false)
       // Rethrow — the modal needs this to clear its pending state and say so.
       throw err
     }
