@@ -1,6 +1,6 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import { playAndSaveRound } from './fixtures/round'
-import { AUTH0_TEST_DOMAIN } from '../playwright.config'
+import { AUTH0_TEST_DOMAIN, stubAuth0 } from './fixtures/auth0'
 
 /**
  * End-to-end coverage for the post-save "save your rounds to the cloud?" prompt.
@@ -13,16 +13,6 @@ import { AUTH0_TEST_DOMAIN } from '../playwright.config'
  * This is also the first e2e coverage of the round-save flow itself; the walk
  * from search to save lives in `fixtures/round.ts`.
  */
-
-/**
- * Swallow every call to the fake tenant. Auth0's SDK probes the issuer on
- * mount; without this the app would stall on unroutable requests.
- */
-async function stubAuth0(page: Page): Promise<void> {
-  await page.route(`https://${AUTH0_TEST_DOMAIN}/**`, async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
-  })
-}
 
 test.describe('Cloud prompt after saving a round', () => {
   test.beforeEach(async ({ page }) => {

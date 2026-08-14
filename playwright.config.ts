@@ -1,5 +1,6 @@
 import { statSync } from 'node:fs'
 import { defineConfig, devices } from '@playwright/test'
+import { AUTH0_TEST_DOMAIN } from './e2e/fixtures/auth0'
 
 /**
  * Resolve which Chromium binary to launch:
@@ -65,7 +66,6 @@ const BASE_URL = `http://localhost:${PORT}`
  */
 const SYNC_PORT = 5274
 const SYNC_BASE_URL = `http://localhost:${SYNC_PORT}`
-export const AUTH0_TEST_DOMAIN = 'auth.example.test'
 
 export default defineConfig({
   testDir: './e2e',
