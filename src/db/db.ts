@@ -2,9 +2,11 @@
  * Dexie (IndexedDB) database — the sole data store for the MVP.
  *
  * Tables:
- *  - courses: cached GolfCourseAPI course objects, keyed by API id.
- *  - rounds:  all rounds including in-progress drafts, keyed by uuid.
- *  - profile: single local profile row.
+ *  - courses:   cached GolfCourseAPI course objects, keyed by API id.
+ *  - rounds:    all rounds including in-progress drafts, keyed by uuid.
+ *  - profile:   single local profile row.
+ *  - syncState: singleton sync cursor + the account being synced.
+ *  - prefs:     singleton device-local UI state (the cloud-prompt cadence).
  */
 import Dexie, { type EntityTable } from 'dexie'
 import type { CachedCourse, CloudPromptPrefs, Round, Profile, SyncState } from './types'
