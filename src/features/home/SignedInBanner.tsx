@@ -23,10 +23,15 @@ import { SpinnerIcon, XIcon } from '@/components/icons'
 export function SignedInBanner() {
   const { isAuthenticated, email } = useAuth()
   const prefs = useLiveQuery(() => getCloudPromptPrefs(), [], undefined)
-  const roundCount = useLiveQuery(() => countCompletedRounds(), [], 0)
+  // No default: the copy quotes this number, and the two live queries resolve
+  // independently. Defaulting to 0 would let the banner render before the count
+  // arrives and announce "Your 0 rounds are safe in the cloud." to someone who
+  // by construction has at least one — the prompt can't fire at zero rounds.
+  const roundCount = useLiveQuery(() => countCompletedRounds(), [])
   const status = useSyncStore((s) => s.status)
 
-  const visible = isAuthenticated && prefs?.pendingSignIn === true
+  const visible =
+    isAuthenticated && prefs?.pendingSignIn === true && roundCount !== undefined
 
   // Clear the flag once the banner goes away — dismissed, or simply navigated
   // past. Either way it has been seen, so it shouldn't greet them again.

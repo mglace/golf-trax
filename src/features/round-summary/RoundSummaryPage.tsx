@@ -33,7 +33,7 @@ export function RoundSummaryPage() {
   const navigate = useNavigate()
   const { roundId } = useParams<{ roundId: string }>()
   const round = useLiveQuery(() => (roundId ? getRound(roundId) : undefined), [roundId])
-  const { isConfigured, isAuthenticated, login } = useAuth()
+  const { isConfigured, isLoading, isAuthenticated, login } = useAuth()
   const [saving, setSaving] = useState(false)
   const [editIndex, setEditIndex] = useState<number | null>(null)
   // Non-null while the post-save cloud prompt is up; carries what the copy needs.
@@ -105,18 +105,29 @@ export function RoundSummaryPage() {
     // something worth keeping to point at — offer the account here rather than
     // leaving sync discoverable only from Settings. The round is already saved,
     // so the prompt delays nothing but the navigation.
-    const [completedCount, prefs] = await Promise.all([
-      countCompletedRounds(),
-      getCloudPromptPrefs(),
-    ])
-    if (shouldPromptForCloud({ isConfigured, isAuthenticated, completedCount, prefs })) {
-      // Record before rendering: a user who force-quits mid-prompt shouldn't be
-      // asked again at the same milestone.
-      await recordCloudPromptShown(completedCount)
-      trackEvent('cloud_prompt_shown', { rounds_saved: completedCount })
-      setCloudPrompt({ count: completedCount, repeat: isRepeatCloudPrompt(prefs) })
-      setSaving(false)
-      return
+    //
+    // Everything here is strictly optional relative to the save, so a Dexie
+    // failure must degrade to the pre-prompt behaviour — plain navigation —
+    // rather than reject out of the handler and strand the user on a summary
+    // screen with `saving` stuck true and the button disabled.
+    try {
+      const [completedCount, prefs] = await Promise.all([
+        countCompletedRounds(),
+        getCloudPromptPrefs(),
+      ])
+      if (
+        shouldPromptForCloud({ isConfigured, isLoading, isAuthenticated, completedCount, prefs })
+      ) {
+        // Record before rendering: a user who force-quits mid-prompt shouldn't be
+        // asked again at the same milestone.
+        await recordCloudPromptShown(completedCount)
+        trackEvent('cloud_prompt_shown', { rounds_saved: completedCount })
+        setCloudPrompt({ count: completedCount, repeat: isRepeatCloudPrompt(prefs) })
+        setSaving(false)
+        return
+      }
+    } catch {
+      /* prompt is optional — fall through to the navigation below */
     }
 
     navigate('/rounds')

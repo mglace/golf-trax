@@ -11,6 +11,7 @@ import type { CloudPromptPrefs } from '@/db/types'
 function input(over: Partial<CloudPromptInput> = {}): CloudPromptInput {
   return {
     isConfigured: true,
+    isLoading: false,
     isAuthenticated: false,
     completedCount: 1,
     prefs: undefined,
@@ -72,6 +73,24 @@ describe('shouldPromptForCloud', () => {
     const p = prefs({ lastPromptedCount: 3 })
     expect(shouldPromptForCloud(input({ completedCount: 2, prefs: p }))).toBe(false)
     expect(shouldPromptForCloud(input({ completedCount: 3, prefs: p }))).toBe(false)
+  })
+
+  it('does not re-open an earlier milestone when the library shrinks', () => {
+    // Asked (and declined) at 3, then every round is deleted and a new one
+    // saved. Count is back to 1 — a milestone, but one already spent.
+    const p = prefs({ lastPromptedCount: 3 })
+    expect(shouldPromptForCloud(input({ completedCount: 1, prefs: p }))).toBe(false)
+    expect(shouldPromptForCloud(input({ completedCount: 0, prefs: p }))).toBe(false)
+    // …but the milestone beyond the last ask is still available.
+    expect(shouldPromptForCloud(input({ completedCount: 5, prefs: p }))).toBe(true)
+  })
+
+  it('holds while Auth0 is still restoring a session', () => {
+    // `isAuthenticated` reads false mid-restore, so without this a signed-in
+    // user who cold-loads the summary and taps Save is shown a sign-in modal —
+    // and the milestone is consumed on someone who should never have seen it.
+    expect(shouldPromptForCloud(input({ isLoading: true }))).toBe(false)
+    expect(shouldPromptForCloud(input({ isLoading: true, completedCount: 3 }))).toBe(false)
   })
 
   it('is quiet at zero rounds', () => {

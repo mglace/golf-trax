@@ -25,6 +25,11 @@ export const CLOUD_PROMPT_MILESTONES: readonly number[] = [1, 3, 5]
 export interface CloudPromptInput {
   /** Whether this build has Auth0 configured at all (`auth/authConfig.ts`). */
   isConfigured: boolean
+  /**
+   * Auth0 is still restoring a cached session, so `isAuthenticated` is not yet
+   * trustworthy — it reads `false` for a signed-in user until the SDK settles.
+   */
+  isLoading: boolean
   isAuthenticated: boolean
   /** Live completed rounds on this device, measured *after* the save. */
   completedCount: number
@@ -35,18 +40,26 @@ export interface CloudPromptInput {
 /** Whether to show the cloud prompt for a just-saved round. */
 export function shouldPromptForCloud({
   isConfigured,
+  isLoading,
   isAuthenticated,
   completedCount,
   prefs,
 }: CloudPromptInput): boolean {
   // A local-only build has no account surface at all, and a signed-in user has
-  // nothing to be offered.
-  if (!isConfigured || isAuthenticated) return false
+  // nothing to be offered. While the session is still resolving we can't tell
+  // the two apart, so hold: prompting there would both show a signed-in user a
+  // sign-in modal and burn the milestone below on someone who never saw it.
+  if (!isConfigured || isLoading || isAuthenticated) return false
   if (prefs?.dismissedForever) return false
   if (!CLOUD_PROMPT_MILESTONES.includes(completedCount)) return false
-  // Never re-offer the same milestone — e.g. after deleting a round and saving
-  // another, which walks the count back over a milestone it already passed.
-  return prefs?.lastPromptedCount !== completedCount
+  // Milestones only ever move forward. Matching on the exact count would re-open
+  // an earlier one if the library shrinks — delete every round after being asked
+  // at 3, save a new one, and count 1 would ask again despite already being
+  // declined. Anything at or below the last ask stays closed.
+  if (prefs?.lastPromptedCount !== undefined && completedCount <= prefs.lastPromptedCount) {
+    return false
+  }
+  return true
 }
 
 /**
