@@ -271,8 +271,10 @@ interval while the app is foregrounded. All sync is best-effort and idempotent.
   account section and a **sync status** line ("All changes synced" / "Syncing…"
   / "Offline — will sync later" / "Sign in to sync across devices").
 - **A post-save prompt** (added later) offers the account from Round Summary
-  after a round is finalized, at the 1st/3rd/5th completed round, so sync is
-  discoverable from the core flow rather than only from Settings. It takes an
+  after a round is finalized, at the 1st/3rd/5th completed round — plus one
+  catch-up ask for a device that already had more rounds than that before the
+  prompt existed — so sync is discoverable from the core flow rather than only
+  from Settings. It takes an
   email in-app and passes it to Auth0 as a `login_hint`; the adoption that
   follows is the ordinary §6.4 merge, with **no claim endpoint or device id**.
   It stays an invitation: the round is already saved locally before it renders,

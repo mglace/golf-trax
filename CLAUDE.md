@@ -233,9 +233,12 @@ redirect — there is deliberately no bespoke signup backend:
    permanent home, always available.
 2. **The post-save cloud prompt** (`features/onboarding/CloudPromptModal.tsx`) —
    offered from Round Summary after a round is finalized, at the completed-round
-   milestones in `domain/cloudPrompt.ts` (1/3/5, once each). Device-local prompt
-   state lives in the Dexie `prefs` table (`db/prefsRepo.ts`), deliberately
-   **not** on `Profile`, which syncs.
+   milestones in `domain/cloudPrompt.ts` (1/3/5, once each), plus a **one-time
+   catch-up** for a device that has never been asked and is already past the
+   last milestone — without it the exact-count match would skip every user who
+   already had a library when the prompt shipped. Device-local prompt state
+   lives in the Dexie `prefs` table (`db/prefsRepo.ts`), deliberately **not** on
+   `Profile`, which syncs.
 
 `AuthValue.login` takes an optional `{ email }` — supplied, it becomes Auth0's
 `login_hint` + `connection: 'email'` so the hosted screen opens pre-filled. It

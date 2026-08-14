@@ -23,6 +23,8 @@ function prefs(over: Partial<CloudPromptPrefs> = {}): CloudPromptPrefs {
   return { id: 'cloudPrompt', ...over }
 }
 
+const LAST = CLOUD_PROMPT_MILESTONES[CLOUD_PROMPT_MILESTONES.length - 1]
+
 describe('shouldPromptForCloud', () => {
   it('prompts at each milestone', () => {
     for (const n of CLOUD_PROMPT_MILESTONES) {
@@ -31,15 +33,15 @@ describe('shouldPromptForCloud', () => {
   })
 
   it('stays quiet between milestones', () => {
-    for (const n of [2, 4, 6, 7, 12]) {
+    for (const n of [2, 4]) {
       expect(shouldPromptForCloud(input({ completedCount: n }))).toBe(false)
     }
   })
 
-  it('never fires again after the last milestone', () => {
-    const last = CLOUD_PROMPT_MILESTONES[CLOUD_PROMPT_MILESTONES.length - 1]
-    for (let n = last + 1; n <= last + 20; n++) {
-      expect(shouldPromptForCloud(input({ completedCount: n }))).toBe(false)
+  it('never fires again once the last milestone has been offered', () => {
+    const p = prefs({ lastPromptedCount: LAST })
+    for (let n = LAST + 1; n <= LAST + 20; n++) {
+      expect(shouldPromptForCloud(input({ completedCount: n, prefs: p }))).toBe(false)
     }
   })
 
@@ -83,6 +85,42 @@ describe('shouldPromptForCloud', () => {
     expect(shouldPromptForCloud(input({ completedCount: 0, prefs: p }))).toBe(false)
     // …but the milestone beyond the last ask is still available.
     expect(shouldPromptForCloud(input({ completedCount: 5, prefs: p }))).toBe(true)
+  })
+
+  describe('catch-up for libraries that predate the prompt', () => {
+    it('offers once to a never-asked device already past the last milestone', () => {
+      for (const n of [LAST + 1, 10, 250]) {
+        expect(shouldPromptForCloud(input({ completedCount: n }))).toBe(true)
+      }
+    })
+
+    it('does not repeat once that ask has been recorded', () => {
+      // The catch-up fired at 7 and the caller stamped it; 8, 9, … stay quiet.
+      const p = prefs({ lastPromptedCount: 7 })
+      for (const n of [8, 9, 40]) {
+        expect(shouldPromptForCloud(input({ completedCount: n, prefs: p }))).toBe(false)
+      }
+    })
+
+    it('still respects the permanent opt-out', () => {
+      const p = prefs({ dismissedForever: true })
+      expect(shouldPromptForCloud(input({ completedCount: 30, prefs: p }))).toBe(false)
+    })
+
+    it('does not fire for a signed-in user or a local-only build', () => {
+      expect(shouldPromptForCloud(input({ completedCount: 30, isAuthenticated: true }))).toBe(
+        false,
+      )
+      expect(shouldPromptForCloud(input({ completedCount: 30, isConfigured: false }))).toBe(false)
+      expect(shouldPromptForCloud(input({ completedCount: 30, isLoading: true }))).toBe(false)
+    })
+
+    it('leaves a device that declined an earlier milestone alone', () => {
+      // Asked at 1 and declined, then grew past the last milestone — that's a
+      // decline, not a device the prompt never reached.
+      const p = prefs({ lastPromptedCount: 1 })
+      expect(shouldPromptForCloud(input({ completedCount: 20, prefs: p }))).toBe(false)
+    })
   })
 
   it('holds while Auth0 is still restoring a session', () => {

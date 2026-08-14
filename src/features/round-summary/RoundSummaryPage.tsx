@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import {
@@ -17,7 +17,7 @@ import { triggerSync } from '@/sync/controller'
 import { useAuth } from '@/auth/authContext'
 import { trackEvent } from '@/analytics/gtag'
 import { computeTotals, ROUND_LENGTH_LABEL } from '@/domain/round'
-import { shouldPromptForCloud, isRepeatCloudPrompt } from '@/domain/cloudPrompt'
+import { shouldPromptForCloud, isRepeatCloudPrompt, canPromptForCloud } from '@/domain/cloudPrompt'
 import { CloudPromptModal } from '@/features/onboarding/CloudPromptModal'
 import { ChevronLeftIcon, SpinnerIcon } from '@/components/icons'
 import { StatsWidget } from './StatsWidget'
@@ -40,6 +40,11 @@ export function RoundSummaryPage() {
   const [cloudPrompt, setCloudPrompt] = useState<{ count: number; repeat: boolean } | null>(
     null,
   )
+  // Whether the current prompt already reported `cloud_signin_started`. The
+  // hand-off to Auth0 is async and can run long on a bad connection, and Escape
+  // and the backdrop stay live throughout (deliberately — see below), so without
+  // this one prompt could report both a start and a decline.
+  const signInStartedRef = useRef(false)
 
   const [loaded, setLoaded] = useState(false)
   useEffect(() => {
@@ -110,7 +115,16 @@ export function RoundSummaryPage() {
     // failure must degrade to the pre-prompt behaviour — plain navigation —
     // rather than reject out of the handler and strand the user on a summary
     // screen with `saving` stuck true and the button disabled.
+    //
+    // The auth gate is checked first because `countCompletedRounds()` is not
+    // cheap (it deserializes every completed round — see its doc), and on a
+    // local-only build or for a signed-in user the answer is always no, so
+    // querying first would burn that cost on every save for nothing.
     try {
+      if (!canPromptForCloud({ isConfigured, isLoading, isAuthenticated })) {
+        navigate('/rounds')
+        return
+      }
       const [completedCount, prefs] = await Promise.all([
         countCompletedRounds(),
         getCloudPromptPrefs(),
@@ -122,6 +136,7 @@ export function RoundSummaryPage() {
         // asked again at the same milestone.
         await recordCloudPromptShown(completedCount)
         trackEvent('cloud_prompt_shown', { rounds_saved: completedCount })
+        signInStartedRef.current = false
         setCloudPrompt({ count: completedCount, repeat: isRepeatCloudPrompt(prefs) })
         setSaving(false)
         return
@@ -136,11 +151,22 @@ export function RoundSummaryPage() {
   // `is_permanent` separates "not now" from "don't ask again" — the opt-out rate
   // is the signal for whether this prompt is wearing out its welcome, and it's
   // invisible if both decline paths report identically.
+  //
+  // Escape and the backdrop stay live during the sign-in hand-off on purpose:
+  // `loginWithRedirect` does async work before navigating, and on a flaky
+  // connection — the norm for an app used on a course — that window is unbounded,
+  // so disabling every exit could strand the user in a modal with no way out.
+  // The cost of leaving them live is that a dismissal can land after a start was
+  // already reported, which would count one prompt as both a conversion and a
+  // decline; CLAUDE.md says this funnel is what the cadence gets tuned on, so
+  // suppress the decline rather than the exit.
   function dismissCloudPrompt(permanent = false) {
-    trackEvent('cloud_prompt_dismissed', {
-      rounds_saved: cloudPrompt?.count ?? 0,
-      is_permanent: permanent,
-    })
+    if (!signInStartedRef.current) {
+      trackEvent('cloud_prompt_dismissed', {
+        rounds_saved: cloudPrompt?.count ?? 0,
+        is_permanent: permanent,
+      })
+    }
     setCloudPrompt(null)
     navigate('/rounds')
   }
@@ -167,6 +193,7 @@ export function RoundSummaryPage() {
       /* presentation only — proceed to sign-in regardless */
     }
     trackEvent('cloud_signin_started', { rounds_saved: cloudPrompt?.count ?? 0 })
+    signInStartedRef.current = true
     // Leaves the app for Auth0's hosted login, pre-filled with this address.
     // Deliberately unguarded: a rejection means the redirect never started, and
     // the modal needs it to clear its pending state and say so.

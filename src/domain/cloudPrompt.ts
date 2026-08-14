@@ -22,6 +22,8 @@ import type { CloudPromptPrefs } from '@/db/types'
  */
 export const CLOUD_PROMPT_MILESTONES: readonly number[] = [1, 3, 5]
 
+const LAST_MILESTONE = CLOUD_PROMPT_MILESTONES[CLOUD_PROMPT_MILESTONES.length - 1]
+
 export interface CloudPromptInput {
   /** Whether this build has Auth0 configured at all (`auth/authConfig.ts`). */
   isConfigured: boolean
@@ -37,6 +39,25 @@ export interface CloudPromptInput {
   prefs: CloudPromptPrefs | undefined
 }
 
+/**
+ * The auth-only half of the decision, separated so callers can check it *before*
+ * paying for the round count and prefs that {@link shouldPromptForCloud} needs —
+ * `countCompletedRounds()` is not a cheap query (see its doc), and on a
+ * local-only build or for a signed-in user the answer is always no.
+ *
+ * A local-only build has no account surface at all, and a signed-in user has
+ * nothing to be offered. While the session is still resolving we can't tell the
+ * two apart, so hold: prompting there would both show a signed-in user a
+ * sign-in modal and burn a milestone on someone who never saw it.
+ */
+export function canPromptForCloud(auth: {
+  isConfigured: boolean
+  isLoading: boolean
+  isAuthenticated: boolean
+}): boolean {
+  return auth.isConfigured && !auth.isLoading && !auth.isAuthenticated
+}
+
 /** Whether to show the cloud prompt for a just-saved round. */
 export function shouldPromptForCloud({
   isConfigured,
@@ -45,20 +66,25 @@ export function shouldPromptForCloud({
   completedCount,
   prefs,
 }: CloudPromptInput): boolean {
-  // A local-only build has no account surface at all, and a signed-in user has
-  // nothing to be offered. While the session is still resolving we can't tell
-  // the two apart, so hold: prompting there would both show a signed-in user a
-  // sign-in modal and burn the milestone below on someone who never saw it.
-  if (!isConfigured || isLoading || isAuthenticated) return false
+  if (!canPromptForCloud({ isConfigured, isLoading, isAuthenticated })) return false
   if (prefs?.dismissedForever) return false
+
+  const lastPrompted = prefs?.lastPromptedCount
+
+  // Catch-up for a library that is already past the last milestone on a device
+  // that has never been asked. The milestones are exact counts, so without this
+  // anyone who had 6+ rounds when the prompt shipped would sail past 7, 8, …
+  // and never be offered an account — and they are precisely the people this
+  // exists for: long-time players who never opened Settings. One ask, then the
+  // rules below take over, because the caller stamps `lastPromptedCount`.
+  if (lastPrompted === undefined && completedCount > LAST_MILESTONE) return true
+
   if (!CLOUD_PROMPT_MILESTONES.includes(completedCount)) return false
   // Milestones only ever move forward. Matching on the exact count would re-open
   // an earlier one if the library shrinks — delete every round after being asked
   // at 3, save a new one, and count 1 would ask again despite already being
   // declined. Anything at or below the last ask stays closed.
-  if (prefs?.lastPromptedCount !== undefined && completedCount <= prefs.lastPromptedCount) {
-    return false
-  }
+  if (lastPrompted !== undefined && completedCount <= lastPrompted) return false
   return true
 }
 
