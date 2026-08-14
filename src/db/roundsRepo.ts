@@ -7,7 +7,7 @@ import { markCoursePlayed } from './coursesRepo'
 import type { Gender, HoleEntry, Round, RoundLength } from './types'
 import type { ApiCourse } from '@/api/types'
 import { findTee, formatCourseName } from '@/domain/course'
-import { buildHoles, computeTotals, deriveGir } from '@/domain/round'
+import { buildHoles, computeTotals, deriveGir, teeRatingsFor } from '@/domain/round'
 
 /**
  * Create a new draft round from a course + selected tee + round length,
@@ -27,6 +27,9 @@ export async function createDraftRound(
 
   const now = new Date().toISOString()
   const totals = computeTotals(holes)
+  // Snapshot the tee's ratings (18-hole or front/back-9 per length) so this
+  // round can feed the official WHS handicap. Absent on unrated/manual tees.
+  const ratings = teeRatingsFor(tee, roundLength)
   const round: Round = {
     id: crypto.randomUUID(),
     courseId: course.id,
@@ -41,6 +44,13 @@ export async function createDraftRound(
     totalScore: totals.totalScore,
     totalPar: totals.totalPar,
     updatedAt: now,
+    ...(ratings
+      ? {
+          courseRating: ratings.courseRating,
+          slopeRating: ratings.slopeRating,
+          bogeyRating: ratings.bogeyRating,
+        }
+      : {}),
     // Phase 2 sync bookkeeping. `dirty = 1` on every write (§5.2); the push
     // additionally filters to completed rounds (§11.11), so a dirty draft is
     // never actually pushed. `owner = 'local'` until an account adopts it.

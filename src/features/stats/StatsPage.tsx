@@ -12,9 +12,14 @@ import {
   trendSeries,
   windowRounds,
   isScoreable,
+  scoringDistribution,
+  puttingStats,
+  teeBreakdown,
   type StatsWindow,
   type RoundScore,
+  type ScoringDistribution,
 } from '@/domain/stats'
+import { whsIndex } from '@/domain/handicap'
 import { ROUND_LENGTH_LABEL } from '@/domain/round'
 import { TrendChart } from './TrendChart'
 import { ChartIcon, SpinnerIcon } from '@/components/icons'
@@ -25,6 +30,15 @@ function fmtVsPar(v: number | null, digits = 1): string {
   if (Math.abs(v) < 0.05) return 'E'
   const n = v.toFixed(digits)
   return v > 0 ? `+${n}` : n
+}
+
+/** Format a WHS Handicap Index: "12.4", or "+2.1" for a plus handicap. */
+function fmtIndex(v: number): string {
+  return v < 0 ? `+${Math.abs(v).toFixed(1)}` : v.toFixed(1)
+}
+
+function fmtPct(v: number | null): string {
+  return v === null ? '—' : `${Math.round(v)}%`
 }
 
 const WINDOWS: { key: StatsWindow; label: string }[] = [
@@ -86,12 +100,17 @@ export function StatsPage() {
   const excluded = rounds.length - scoreable.length
 
   const summary = scoringSummary(windowRounds(scoreable, window))
+  // Official WHS index when enough rated 18-hole rounds exist; else the estimate.
+  const whs = whsIndex(scoreable)
   const handicap = handicapEstimate(scoreable) // always last 10 by definition
   const trend = trendSeries(scoreable, 10)
   const courses = courseBreakdown(scoreable, 5)
+  const tees = teeBreakdown(scoreable, 3)
 
   // Per-hole stats are valid for any played hole, so they use every (filtered) round.
   const play = playSummary(windowRounds(rounds, window))
+  const distribution = scoringDistribution(windowRounds(rounds, window))
+  const putting = puttingStats(windowRounds(rounds, window))
   const difficulty = holeDifficulty(rounds)
   const hardest = difficulty.slice(0, 3)
   const easiest = [...difficulty].reverse().slice(0, 3)
@@ -121,29 +140,41 @@ export function StatsPage() {
         </div>
       )}
 
-      {/* Handicap estimate hero */}
+      {/* Handicap hero: official WHS index when enough rated 18-hole rounds
+          exist, otherwise the rough estimate. */}
       <div className="rounded-2xl border border-fairway-200 bg-fairway-50/60 p-5 shadow-sm">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-fairway-700">
-              Est. Handicap
+              {whs ? 'Handicap Index' : 'Est. Handicap'}
             </p>
             <p className="mt-1 text-4xl font-bold tabular-nums text-fairway-800">
-              {handicap ? fmtVsPar(handicap.value) : '—'}
+              {whs ? fmtIndex(whs.value) : handicap ? fmtVsPar(handicap.value) : '—'}
             </p>
           </div>
           <div className="text-right text-xs text-slate-500">
             <p className="font-semibold text-slate-700">
-              {scoreable.length} {scoreable.length === 1 ? 'round' : 'rounds'}
+              {whs ? whs.ratedRoundCount : scoreable.length}{' '}
+              {(whs ? whs.ratedRoundCount : scoreable.length) === 1 ? 'round' : 'rounds'}
             </p>
-            <p>scored</p>
+            <p>{whs ? 'rated' : 'scored'}</p>
           </div>
         </div>
         <p className="mt-3 text-xs text-slate-500">
-          Rough estimate from your last {handicap?.sampleSize ?? 0}{' '}
-          {handicap?.sampleSize === 1 ? 'round' : 'rounds'}
-          {courseScoped ? ' at this course' : ''} (18-hole equivalent vs par). Not an official USGA
-          handicap.
+          {whs ? (
+            <>
+              Official WHS index — best {whs.differentialsUsed} of your last {whs.ratedRoundCount}{' '}
+              rated 18-hole {whs.ratedRoundCount === 1 ? 'round' : 'rounds'}
+              {courseScoped ? ' at this course' : ''}.
+            </>
+          ) : (
+            <>
+              Rough estimate from your last {handicap?.sampleSize ?? 0}{' '}
+              {handicap?.sampleSize === 1 ? 'round' : 'rounds'}
+              {courseScoped ? ' at this course' : ''} (18-hole equivalent vs par). Not an official
+              USGA handicap.
+            </>
+          )}
         </p>
         {excluded > 0 && (
           <p className="mt-1 text-xs text-slate-500">
@@ -195,11 +226,44 @@ export function StatsPage() {
       {/* Play stats */}
       <section className="mt-4" aria-label="Play statistics">
         <div className="grid grid-cols-3 gap-2">
-          <Tile label="Fairways" value={play.fairwayPct === null ? '—' : `${Math.round(play.fairwayPct)}%`} sub="hit" />
-          <Tile label="GIR" value={play.girPct === null ? '—' : `${Math.round(play.girPct)}%`} sub="greens" />
+          <Tile label="Fairways" value={fmtPct(play.fairwayPct)} sub="hit" />
+          <Tile label="GIR" value={fmtPct(play.girPct)} sub="greens" />
           <Tile label="Putts" value={play.avgPutts === null ? '—' : play.avgPutts.toFixed(1)} sub="per hole" />
         </div>
       </section>
+
+      {/* Putting depth */}
+      <section className="mt-2" aria-label="Putting">
+        <div className="grid grid-cols-3 gap-2">
+          <Tile label="1-putts" value={fmtPct(putting.onePuttPct)} sub="of holes" />
+          <Tile label="3-putts" value={fmtPct(putting.threePuttPct)} sub="of holes" />
+          <Tile
+            label="Putts/GIR"
+            value={putting.puttsPerGir === null ? '—' : putting.puttsPerGir.toFixed(2)}
+            sub="greens hit"
+          />
+        </div>
+      </section>
+
+      {/* Scoring distribution */}
+      {distribution.total > 0 && (
+        <section className="mt-6" aria-label="Scoring distribution">
+          <h2 className="mb-2 text-sm font-semibold text-slate-600">Scoring</h2>
+          <ScoringBar dist={distribution} />
+          {distribution.byParType.length > 0 && (
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              {distribution.byParType.map((p) => (
+                <Tile
+                  key={p.par}
+                  label={`Par ${p.par}`}
+                  value={fmtVsPar(p.avgVsPar)}
+                  sub={`avg ${p.avgScore.toFixed(1)}`}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Trend */}
       <section className="mt-6" aria-label="Score trend">
@@ -253,6 +317,62 @@ export function StatsPage() {
           </ul>
         </section>
       )}
+
+      {/* By tee */}
+      {tees.length > 0 && (
+        <section className="mt-6" aria-label="By tee">
+          <h2 className="mb-2 text-sm font-semibold text-slate-600">By tee</h2>
+          <ul className="space-y-2">
+            {tees.map((t) => (
+              <li
+                key={t.teeName}
+                className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+              >
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-slate-900">{t.teeName}</p>
+                  <p className="text-xs text-slate-500">{t.count} scored</p>
+                </div>
+                <p className="shrink-0 text-lg font-bold tabular-nums text-fairway-700">
+                  {fmtVsPar(t.avgVsPar18)}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </div>
+  )
+}
+
+/** Stacked bar of hole results (birdie-or-better → triple+) with a legend. */
+function ScoringBar({ dist }: { dist: ScoringDistribution }) {
+  const segs = [
+    { label: 'Birdie+', count: dist.eagles + dist.birdies, cls: 'bg-fairway-600' },
+    { label: 'Par', count: dist.pars, cls: 'bg-fairway-300' },
+    { label: 'Bogey', count: dist.bogeys, cls: 'bg-amber-400' },
+    { label: 'Double', count: dist.doubles, cls: 'bg-amber-600' },
+    { label: 'Triple+', count: dist.triplesPlus, cls: 'bg-red-500' },
+  ].filter((s) => s.count > 0)
+  return (
+    <div>
+      <div className="flex h-5 w-full overflow-hidden rounded-full bg-slate-100">
+        {segs.map((s) => (
+          <div
+            key={s.label}
+            className={s.cls}
+            style={{ width: `${(s.count / dist.total) * 100}%` }}
+            title={`${s.label}: ${s.count}`}
+          />
+        ))}
+      </div>
+      <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600">
+        {segs.map((s) => (
+          <li key={s.label} className="flex items-center gap-1">
+            <span className={`inline-block h-2.5 w-2.5 rounded-full ${s.cls}`} aria-hidden />
+            {s.label} {Math.round((s.count / dist.total) * 100)}%
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

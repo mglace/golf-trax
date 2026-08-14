@@ -7,6 +7,7 @@ import {
   fairwayApplies,
   computeTotals,
   computeRoundStats,
+  teeRatingsFor,
 } from './round'
 import type { ApiTeeBox } from '@/api/types'
 import type { HoleEntry } from '@/db/types'
@@ -72,6 +73,25 @@ describe('buildHoles', () => {
     const holes = buildHoles(tee18(), 'front9')
     expect(holes[0].holeNumber).toBe(1)
     expect(holes).toHaveLength(9)
+  })
+})
+
+describe('teeRatingsFor', () => {
+  it('uses full-course ratings for an 18-hole round', () => {
+    expect(teeRatingsFor(tee18(), '18')).toEqual({
+      courseRating: 72,
+      slopeRating: 130,
+      bogeyRating: 95,
+    })
+  })
+  it('uses the matching 9-hole ratings for front9 / back9', () => {
+    const tee = { ...tee18(), front_course_rating: 35.5, back_course_rating: 36.5 }
+    expect(teeRatingsFor(tee, 'front9')).toMatchObject({ courseRating: 35.5, slopeRating: 130 })
+    expect(teeRatingsFor(tee, 'back9')).toMatchObject({ courseRating: 36.5, slopeRating: 130 })
+  })
+  it('returns null when the tee has no usable rating', () => {
+    expect(teeRatingsFor({ ...tee18(), course_rating: 0 }, '18')).toBeNull()
+    expect(teeRatingsFor({ ...tee18(), front_slope_rating: 0 }, 'front9')).toBeNull()
   })
 })
 

@@ -80,6 +80,16 @@ export interface Round {
   /** ISO timestamp of the last edit (draft auto-save or post-round edit). */
   updatedAt: string
 
+  // --- Phase 3 handicap snapshot (optional). Course/slope/bogey rating for the
+  // selected tee, snapshotted at creation so a round can feed the official WHS
+  // Handicap Index even if the cached course later changes. For 9-hole rounds
+  // these hold the tee's front/back-9 ratings (per `roundLength`). Older rounds
+  // and manual courses without ratings leave these unset and are simply excluded
+  // from the WHS calculation (they still count toward the rough estimate).
+  courseRating?: number
+  slopeRating?: number
+  bogeyRating?: number
+
   // --- Phase 2 sync bookkeeping (local-only; never surfaced to the UI as
   // round data — these drive the sync engine). All are optional on the TS type
   // so existing fixtures/constructors need not set them, but the Dexie

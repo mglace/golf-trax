@@ -9,6 +9,9 @@ import {
   courseOptions,
   trendSeries,
   windowRounds,
+  scoringDistribution,
+  puttingStats,
+  teeBreakdown,
 } from './stats'
 import type { HoleEntry, Round, RoundLength } from '@/db/types'
 
@@ -192,5 +195,78 @@ describe('trendSeries + windowRounds', () => {
     )
     expect(windowRounds(rounds, 'all')).toHaveLength(5)
     expect(windowRounds(rounds, 10)).toHaveLength(5)
+  })
+})
+
+describe('scoringDistribution', () => {
+  it('buckets pars/bogeys and computes par-type averages', () => {
+    // 18-hole round: makeRound distributes +1 bogeys first → 3 bogeys, 15 pars.
+    const dist = scoringDistribution([makeRound({ vsPar: 3, length: '18', date: '2026-07-01' })])
+    expect(dist.total).toBe(18)
+    expect(dist.pars).toBe(15)
+    expect(dist.bogeys).toBe(3)
+    expect(dist.byParType).toHaveLength(1)
+    expect(dist.byParType[0]).toMatchObject({ par: 4, count: 18 })
+    expect(dist.byParType[0].avgVsPar).toBeCloseTo(3 / 18, 5)
+  })
+
+  it('classifies eagles, birdies, doubles and triple-plus by par type', () => {
+    const holes: HoleEntry[] = [
+      { holeNumber: 1, par: 5, handicap: 1, yardage: 500, score: 3 }, // eagle (−2)
+      { holeNumber: 2, par: 4, handicap: 2, yardage: 400, score: 3 }, // birdie
+      { holeNumber: 3, par: 4, handicap: 3, yardage: 400, score: 4 }, // par
+      { holeNumber: 4, par: 4, handicap: 4, yardage: 400, score: 5 }, // bogey
+      { holeNumber: 5, par: 3, handicap: 5, yardage: 180, score: 5 }, // double
+      { holeNumber: 6, par: 3, handicap: 6, yardage: 180, score: 7 }, // triple+ (+4)
+    ]
+    const round: Round = { ...makeRound({ vsPar: 0, length: 'front9', date: '2026-07-01' }), holes }
+    const dist = scoringDistribution([round])
+    expect(dist).toMatchObject({
+      total: 6,
+      eagles: 1,
+      birdies: 1,
+      pars: 1,
+      bogeys: 1,
+      doubles: 1,
+      triplesPlus: 1,
+    })
+    expect(dist.byParType.map((p) => p.par)).toEqual([3, 4, 5])
+  })
+})
+
+describe('puttingStats', () => {
+  it('computes 1-putt %, 3-putt %, and putts per GIR', () => {
+    const holes: HoleEntry[] = [
+      { holeNumber: 1, par: 4, handicap: 1, yardage: 400, score: 4, putts: 1, gir: false },
+      { holeNumber: 2, par: 4, handicap: 2, yardage: 400, score: 4, putts: 2, gir: true },
+      { holeNumber: 3, par: 4, handicap: 3, yardage: 400, score: 6, putts: 3, gir: false },
+      { holeNumber: 4, par: 4, handicap: 4, yardage: 400, score: 4, putts: 2, gir: true },
+    ]
+    const round: Round = { ...makeRound({ vsPar: 0, length: 'front9', date: '2026-07-01' }), holes }
+    const s = puttingStats([round])
+    expect(s.holesWithPutts).toBe(4)
+    expect(s.onePuttPct).toBe(25)
+    expect(s.threePuttPct).toBe(25)
+    expect(s.puttsPerGir).toBe(2) // (2 + 2) / 2 GIR holes
+  })
+
+  it('is null when no putts are recorded', () => {
+    const s = puttingStats([makeRound({ vsPar: 0, length: '18', date: '2026-07-01' })])
+    expect(s).toMatchObject({ onePuttPct: null, threePuttPct: null, puttsPerGir: null })
+  })
+})
+
+describe('teeBreakdown', () => {
+  it('includes only tees with enough rounds, sorted by count', () => {
+    const blue = Array.from({ length: 3 }, (_, i) => ({
+      ...makeRound({ vsPar: 4, length: '18', date: `2026-06-0${i + 1}` }),
+      teeName: 'Blue',
+    }))
+    const white = [
+      { ...makeRound({ vsPar: 2, length: '18', date: '2026-06-10' }), teeName: 'White' },
+    ]
+    const stats = teeBreakdown([...blue, ...white], 3)
+    expect(stats).toHaveLength(1)
+    expect(stats[0]).toMatchObject({ teeName: 'Blue', count: 3 })
   })
 })

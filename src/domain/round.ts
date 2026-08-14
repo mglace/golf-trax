@@ -61,6 +61,42 @@ export function buildHoles(tee: ApiTeeBox, roundLength: RoundLength): HoleEntry[
   })
 }
 
+export interface TeeRatings {
+  courseRating: number
+  slopeRating: number
+  bogeyRating: number
+}
+
+/**
+ * The course/slope/bogey ratings to snapshot for a round of the given length.
+ * An 18-hole round uses the tee's full-course ratings; a front-9 or back-9 round
+ * uses the matching 9-hole ratings. Returns null when the tee doesn't publish a
+ * usable rating (course rating or slope of 0/absent — common on lean or manual
+ * records), so the round is simply excluded from the official handicap.
+ */
+export function teeRatingsFor(tee: ApiTeeBox, roundLength: RoundLength): TeeRatings | null {
+  const pick =
+    roundLength === 'front9'
+      ? {
+          courseRating: tee.front_course_rating,
+          slopeRating: tee.front_slope_rating,
+          bogeyRating: tee.front_bogey_rating,
+        }
+      : roundLength === 'back9'
+        ? {
+            courseRating: tee.back_course_rating,
+            slopeRating: tee.back_slope_rating,
+            bogeyRating: tee.back_bogey_rating,
+          }
+        : {
+            courseRating: tee.course_rating,
+            slopeRating: tee.slope_rating,
+            bogeyRating: tee.bogey_rating,
+          }
+  if (!pick.courseRating || !pick.slopeRating) return null
+  return pick
+}
+
 /**
  * Greens in regulation, derived only when putts are known:
  *   gir = (score - putts) <= (par - 2)

@@ -121,6 +121,102 @@ export function playSummary(rounds: Round[]): PlaySummary {
   }
 }
 
+export interface ScoringDistribution {
+  /** Total holes with a score entered (the denominator for percentages). */
+  total: number
+  eagles: number // score − par ≤ −2 (incl. albatross)
+  birdies: number // −1
+  pars: number // E
+  bogeys: number // +1
+  doubles: number // +2
+  triplesPlus: number // ≥ +3
+  /** Scoring average by par type, for the par 3/4/5 the player has holes of. */
+  byParType: { par: number; avgScore: number; avgVsPar: number; count: number }[]
+}
+
+/**
+ * Distribution of hole results (eagle → triple+) and scoring average by par
+ * type, across every scored hole in the given rounds.
+ */
+export function scoringDistribution(rounds: Round[]): ScoringDistribution {
+  const dist: ScoringDistribution = {
+    total: 0,
+    eagles: 0,
+    birdies: 0,
+    pars: 0,
+    bogeys: 0,
+    doubles: 0,
+    triplesPlus: 0,
+    byParType: [],
+  }
+  const byPar = new Map<number, { score: number; vsPar: number; count: number }>()
+  for (const r of rounds) {
+    for (const h of r.holes) {
+      if (h.score === undefined) continue
+      dist.total += 1
+      const vs = h.score - h.par
+      if (vs <= -2) dist.eagles += 1
+      else if (vs === -1) dist.birdies += 1
+      else if (vs === 0) dist.pars += 1
+      else if (vs === 1) dist.bogeys += 1
+      else if (vs === 2) dist.doubles += 1
+      else dist.triplesPlus += 1
+      const cur = byPar.get(h.par) ?? { score: 0, vsPar: 0, count: 0 }
+      cur.score += h.score
+      cur.vsPar += vs
+      cur.count += 1
+      byPar.set(h.par, cur)
+    }
+  }
+  dist.byParType = [...byPar.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([par, v]) => ({
+      par,
+      avgScore: v.score / v.count,
+      avgVsPar: v.vsPar / v.count,
+      count: v.count,
+    }))
+  return dist
+}
+
+export interface PuttingStats {
+  /** Holes where putts were recorded (denominator for the rates below). */
+  holesWithPutts: number
+  /** % of putted holes that took 1 putt. */
+  onePuttPct: number | null
+  /** % of putted holes that took ≥ 3 putts. */
+  threePuttPct: number | null
+  /** Average putts on greens hit in regulation. */
+  puttsPerGir: number | null
+}
+
+/** Putting depth: 1-putt %, 3-putt %, and putts-per-GIR across all holes. */
+export function puttingStats(rounds: Round[]): PuttingStats {
+  let holesWithPutts = 0
+  let onePutts = 0
+  let threePutts = 0
+  let girPutts = 0
+  let girHoles = 0
+  for (const r of rounds) {
+    for (const h of r.holes) {
+      if (h.putts === undefined) continue
+      holesWithPutts += 1
+      if (h.putts === 1) onePutts += 1
+      if (h.putts >= 3) threePutts += 1
+      if (h.gir === true) {
+        girPutts += h.putts
+        girHoles += 1
+      }
+    }
+  }
+  return {
+    holesWithPutts,
+    onePuttPct: holesWithPutts > 0 ? (onePutts / holesWithPutts) * 100 : null,
+    threePuttPct: holesWithPutts > 0 ? (threePutts / holesWithPutts) * 100 : null,
+    puttsPerGir: girHoles > 0 ? girPutts / girHoles : null,
+  }
+}
+
 export interface HoleDifficulty {
   holeNumber: number
   avgVsPar: number
@@ -176,6 +272,30 @@ export function courseBreakdown(rounds: Round[], minRounds = 5): CourseStat[] {
       avgVsPar18: summary.avgVsPar18,
       best: summary.best,
     })
+  }
+  return stats.sort((a, b) => b.count - a.count)
+}
+
+export interface TeeStat {
+  teeName: string
+  count: number
+  avgVsPar18: number | null
+  best: RoundScore | null
+}
+
+/** Per-tee averages, only for tees with at least `minRounds` rounds. */
+export function teeBreakdown(rounds: Round[], minRounds = 3): TeeStat[] {
+  const byTee = new Map<string, Round[]>()
+  for (const r of rounds) {
+    const list = byTee.get(r.teeName) ?? []
+    list.push(r)
+    byTee.set(r.teeName, list)
+  }
+  const stats: TeeStat[] = []
+  for (const [teeName, list] of byTee) {
+    if (list.length < minRounds) continue
+    const summary = scoringSummary(list)
+    stats.push({ teeName, count: list.length, avgVsPar18: summary.avgVsPar18, best: summary.best })
   }
   return stats.sort((a, b) => b.count - a.count)
 }
