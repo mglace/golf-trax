@@ -12,7 +12,7 @@
  * the flag (e.g. the magic link opens in a different browser) costs nothing but
  * this message.
  */
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useAuth } from '@/auth/authContext'
 import { getCloudPromptPrefs, clearPendingSignIn } from '@/db/prefsRepo'
@@ -40,20 +40,33 @@ export function SignedInBanner() {
   )
   const status = useSyncStore((s) => s.status)
 
-  const visible = isAuthenticated && pending && roundCount !== undefined
+  const ready = isAuthenticated && pending && roundCount !== undefined
 
-  // Clear the flag once the banner goes away — dismissed, or simply navigated
-  // past. Either way it has been seen, so it shouldn't greet them again.
+  // Latched at the moment of appearing, and rendered from the latch rather than
+  // from `ready`. Two reasons:
+  //
+  //  - Clearing the flag flips `pending` false, which would otherwise make the
+  //    confirmation vanish the instant it appeared. The count is captured too,
+  //    since its query is gated on `pending` and stops resolving alongside it.
+  //  - The clear happens on *appearance*, not in an effect cleanup. A
+  //    cleanup-time clear silently assumes "cleanup means unmount", which React
+  //    18 StrictMode disproves — it runs mount → cleanup → mount, so in dev the
+  //    flag was being cleared the moment the banner first rendered. Clearing on
+  //    appearance behaves identically under both, and a crash before unmount no
+  //    longer leaves the flag set.
+  const [shown, setShown] = useState<{ count: number } | null>(null)
+
   useEffect(() => {
-    if (!visible) return
-    return () => {
-      void clearPendingSignIn()
-    }
-  }, [visible])
+    if (!ready || shown) return
+    setShown({ count: roundCount })
+    void clearPendingSignIn()
+  }, [ready, shown, roundCount])
 
-  if (!visible) return null
+  // Drop it if the session ends underneath us — a stale "you're signed in"
+  // banner is worse than none.
+  if (!shown || !isAuthenticated) return null
 
-  const rounds = roundCount === 1 ? '1 round' : `${roundCount} rounds`
+  const rounds = shown.count === 1 ? '1 round' : `${shown.count} rounds`
   // Mirrors the STATUS_TEXT map in Settings → Account & sync, phrased around the
   // rounds the user just signed in to protect. 'signed-out' is the pre-handshake
   // state on a fresh load, not a contradiction — SyncManager sets the context a
@@ -63,7 +76,7 @@ export function SignedInBanner() {
       ? // Verb agrees with the count: the first milestone is 1, so "1 round" is
         // the likeliest thing this banner ever says. The branches below read
         // correctly either way.
-        `Your ${rounds} ${roundCount === 1 ? 'is' : 'are'} safe in the cloud.`
+        `Your ${rounds} ${shown.count === 1 ? 'is' : 'are'} safe in the cloud.`
       : status === 'offline'
         ? `Your ${rounds} will sync when you reconnect.`
         : status === 'error'
@@ -89,7 +102,8 @@ export function SignedInBanner() {
       </div>
       <button
         type="button"
-        onClick={() => void clearPendingSignIn()}
+        // Purely local now: the persisted flag was already cleared on appearance.
+        onClick={() => setShown(null)}
         aria-label="Dismiss"
         className="-mr-1 -mt-1 shrink-0 rounded-full p-2 text-slate-400 hover:bg-fairway-100"
       >
