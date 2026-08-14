@@ -12,6 +12,7 @@ import {
   recordCloudPromptShown,
   dismissCloudPromptForever,
   setPendingSignIn,
+  clearPendingSignIn,
 } from '@/db/prefsRepo'
 import { triggerSync } from '@/sync/controller'
 import { useAuth } from '@/auth/authContext'
@@ -222,7 +223,7 @@ export function RoundSummaryPage() {
       // Keep the persisted half of the hand-off state in step with the ref —
       // otherwise the flag survives, and a later unrelated sign-in from Settings
       // greets the user with a banner for a post-save sign-in that never landed.
-      void setPendingSignIn(false)
+      void clearPendingSignIn()
       // Rethrow — the modal needs this to clear its pending state and say so.
       throw err
     }

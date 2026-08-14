@@ -25,7 +25,10 @@ export async function playAndSaveRound(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Start round' }).click()
 
   // Hole entry → summary → save.
-  await page.getByRole('button', { name: 'Finish' }).click()
+  // `exact` because Playwright matches accessible names by substring: without
+  // it this also matches "Review & Finish", which the last hole renders. It only
+  // passes today because a Front 9 round opens on hole 1 of 9.
+  await page.getByRole('button', { name: 'Finish', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Round summary' })).toBeVisible()
   await page.getByRole('button', { name: 'Save round' }).click()
 }

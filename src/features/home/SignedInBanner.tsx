@@ -15,7 +15,7 @@
 import { useEffect } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useAuth } from '@/auth/authContext'
-import { getCloudPromptPrefs, setPendingSignIn } from '@/db/prefsRepo'
+import { getCloudPromptPrefs, clearPendingSignIn } from '@/db/prefsRepo'
 import { countCompletedRounds } from '@/db/roundsRepo'
 import { useSyncStore } from '@/sync/syncStore'
 import { SpinnerIcon, XIcon } from '@/components/icons'
@@ -47,7 +47,7 @@ export function SignedInBanner() {
   useEffect(() => {
     if (!visible) return
     return () => {
-      void setPendingSignIn(false)
+      void clearPendingSignIn()
     }
   }, [visible])
 
@@ -89,7 +89,7 @@ export function SignedInBanner() {
       </div>
       <button
         type="button"
-        onClick={() => void setPendingSignIn(false)}
+        onClick={() => void clearPendingSignIn()}
         aria-label="Dismiss"
         className="-mr-1 -mt-1 shrink-0 rounded-full p-2 text-slate-400 hover:bg-fairway-100"
       >
