@@ -25,9 +25,12 @@ export async function playAndSaveRound(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Start round' }).click()
 
   // Hole entry → summary → save.
-  // `exact` because Playwright matches accessible names by substring: without
-  // it this also matches "Review & Finish", which the last hole renders. It only
-  // passes today because a Front 9 round opens on hole 1 of 9.
+  // `exact` because Playwright matches accessible names by substring by
+  // default, which would also match the "Review & Finish" button the last hole
+  // renders. With it, this resolves to the header button on any hole — so a
+  // future spec that advances to the last hole first is safe. (Before `exact`
+  // was added, the locator passed only because a Front 9 round opens on hole 1
+  // of 9 and never rendered the other button.)
   await page.getByRole('button', { name: 'Finish', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Round summary' })).toBeVisible()
   await page.getByRole('button', { name: 'Save round' }).click()
