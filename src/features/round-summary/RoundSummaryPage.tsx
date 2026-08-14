@@ -168,7 +168,9 @@ export function RoundSummaryPage() {
     }
     trackEvent('cloud_signin_started', { rounds_saved: cloudPrompt?.count ?? 0 })
     // Leaves the app for Auth0's hosted login, pre-filled with this address.
-    login({ email })
+    // Deliberately unguarded: a rejection means the redirect never started, and
+    // the modal needs it to clear its pending state and say so.
+    await login({ email })
   }
 
   return (
@@ -277,7 +279,7 @@ export function RoundSummaryPage() {
         <CloudPromptModal
           roundCount={cloudPrompt.count}
           showDontAskAgain={cloudPrompt.repeat}
-          onSubmit={(email) => void handleCloudPromptSubmit(email)}
+          onSubmit={handleCloudPromptSubmit}
           onDismiss={() => dismissCloudPrompt()}
           onDismissForever={() => void handleCloudPromptForever()}
         />

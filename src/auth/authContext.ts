@@ -26,8 +26,13 @@ export interface AuthValue {
    * Start the sign-in redirect. Callers must invoke it explicitly
    * (`onClick={() => login()}`) rather than passing it straight to a handler, or
    * the DOM event lands in {@link LoginOptions}.
+   *
+   * Resolves only if the redirect never happens; on success the browser has
+   * navigated away. **Rejects** if the hand-off fails before navigation (an SDK
+   * or PKCE error), so a caller showing a pending state can surface it rather
+   * than spin forever.
    */
-  login: (options?: LoginOptions) => void
+  login: (options?: LoginOptions) => Promise<void>
   logout: () => void
   /** A bearer access token, or null if one can't be obtained (offline/expired). */
   getToken: () => Promise<string | null>
@@ -40,7 +45,7 @@ export const INERT: AuthValue = {
   isAuthenticated: false,
   userId: null,
   email: null,
-  login: () => {},
+  login: async () => {},
   logout: () => {},
   getToken: async () => null,
 }

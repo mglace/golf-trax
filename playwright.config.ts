@@ -41,7 +41,16 @@ const executablePath = resolveChromiumPath()
  * `firefox` are intentionally omitted — this is a mobile-first PWA and Chromium
  * on a phone-sized viewport is the representative target.
  */
-const PORT = 5173
+/**
+ * Ports are deliberately outside Vite's dev range. `npm run dev` takes 5173 and
+ * auto-increments into 5174+ when it's busy, so a test server on either would be
+ * reused by `reuseExistingServer` — silently running the suite against a
+ * developer's own build, with their `.env.local` and none of the env pinning
+ * below. Dedicated ports keep reuse safe (a leftover server here was started by
+ * this config, so it carries the same pinning) without forcing every e2e run to
+ * fight `npm run dev` for a port.
+ */
+const PORT = 5273
 const BASE_URL = `http://localhost:${PORT}`
 
 /**
@@ -54,7 +63,7 @@ const BASE_URL = `http://localhost:${PORT}`
  * The values are deliberately fake: specs stub `auth.example.test` at the
  * network boundary, so no test ever reaches a real tenant.
  */
-const SYNC_PORT = 5174
+const SYNC_PORT = 5274
 const SYNC_BASE_URL = `http://localhost:${SYNC_PORT}`
 export const AUTH0_TEST_DOMAIN = 'auth.example.test'
 

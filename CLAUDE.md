@@ -51,10 +51,16 @@ npm run swa:start          # swa start — fronts the Vite dev server + api/
 Playwright runs **two projects against two dev servers**, because the account
 surface is compiled out unless `VITE_AUTH0_*` is set at build time:
 
-- `chromium` (port 5173, no Auth0) — the default. Proves the local-only MVP.
-- `chromium-sync` (port 5174, dummy Auth0 values) — runs only `*.sync.spec.ts`,
+- `chromium` (port 5273, no Auth0) — the default. Proves the local-only MVP.
+- `chromium-sync` (port 5274, dummy Auth0 values) — runs only `*.sync.spec.ts`,
   with the fake tenant stubbed via `page.route`. Name a spec `*.sync.spec.ts`
   when it needs the sign-in/sync surface to exist.
+
+Both servers pin `VITE_GOLF_API_KEY` and the three `VITE_AUTH0_*` values, so a
+developer's `.env.local` can't change which build is under test. The ports sit
+outside Vite's dev range (5173 and its auto-increments) on purpose — on a shared
+port, `reuseExistingServer` would hand the suite a `npm run dev` server and
+silently discard that pinning.
 
 `npm run test:e2e` runs both; add `--project=chromium` to scope.
 

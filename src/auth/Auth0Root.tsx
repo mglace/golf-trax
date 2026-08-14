@@ -28,8 +28,11 @@ function ConfiguredAuth({ children }: { children: ReactNode }) {
     // `email` connection directly — the user typed their address once, in the
     // app, and shouldn't be asked again. Without one (the Settings button), send
     // no params at all so Universal Login keeps whatever the tenant offers.
+    // Returns the SDK's promise rather than discarding it, so a hand-off that
+    // fails before the browser navigates surfaces to the caller instead of
+    // leaving a pending UI stuck forever.
     login: (options) =>
-      void a0.loginWithRedirect(
+      a0.loginWithRedirect(
         options?.email
           ? { authorizationParams: { login_hint: options.email, connection: 'email' } }
           : undefined,

@@ -24,8 +24,11 @@ interface CloudPromptModalProps {
   roundCount: number
   /** Whether to offer "Don't ask again" (withheld on the first ask). */
   showDontAskAgain: boolean
-  /** Submit: hand the address to the sign-in redirect. */
-  onSubmit: (email: string) => void
+  /**
+   * Submit: hand the address to the sign-in redirect. Rejecting means the
+   * hand-off failed before the browser navigated, and the modal recovers.
+   */
+  onSubmit: (email: string) => Promise<void>
   /** "Not now" — dismiss and continue; the prompt may return at a later milestone. */
   onDismiss: () => void
   /** "Don't ask again" — dismiss and suppress the prompt for good. */
@@ -42,8 +45,10 @@ export function CloudPromptModal({
   const dialogRef = useDialogFocus<HTMLDivElement>()
   const [email, setEmail] = useState('')
   const [error, setError] = useState<string>()
-  // The submit hands off to a full-page redirect, so this spinner is never
-  // cleared — it just stops a second tap during the hand-off.
+  // Latched for the duration of the hand-off to stop a second tap. On success
+  // the browser navigates away and it is never cleared; if the hand-off fails
+  // it must be, or every control here — including both dismiss buttons — stays
+  // disabled behind a spinner that never resolves.
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
@@ -54,7 +59,7 @@ export function CloudPromptModal({
     return () => window.removeEventListener('keydown', onKey)
   }, [onDismiss])
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     const trimmed = email.trim()
     if (!EMAIL_RE.test(trimmed)) {
@@ -63,7 +68,14 @@ export function CloudPromptModal({
     }
     setError(undefined)
     setSubmitting(true)
-    onSubmit(trimmed)
+    try {
+      await onSubmit(trimmed)
+    } catch {
+      // The redirect never started — likely offline, which is common here since
+      // the prompt fires the moment a round is saved, often out on a course.
+      setSubmitting(false)
+      setError('Couldn’t start sign-in. Check your connection and try again.')
+    }
   }
 
   return (
@@ -95,7 +107,7 @@ export function CloudPromptModal({
           inconsistently across browsers. The input keeps `type="email"` for the
           right mobile keyboard and autofill.
         */}
-        <form onSubmit={handleSubmit} noValidate className="mt-4">
+        <form onSubmit={(e) => void handleSubmit(e)} noValidate className="mt-4">
           <label htmlFor="cloud-prompt-email" className="sr-only">
             Email address
           </label>
