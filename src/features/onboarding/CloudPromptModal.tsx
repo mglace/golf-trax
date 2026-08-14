@@ -144,7 +144,14 @@ export function CloudPromptModal({
               disabled={submitting}
               className="min-h-[48px] flex-1 rounded-xl bg-fairway-700 py-2.5 font-semibold text-white active:bg-fairway-800 disabled:opacity-50"
             >
-              {submitting ? 'Sending…' : 'Send link'}
+              {/*
+                "Continue", not "Send link": submitting hands off to Auth0's
+                hosted screen, which — even pre-filled by `login_hint` — may still
+                want a tap before it emails anything. This wording is accurate
+                either way, and the body copy above carries the promise that a
+                link is coming.
+              */}
+              {submitting ? 'Opening…' : 'Continue'}
             </button>
           </div>
         </form>

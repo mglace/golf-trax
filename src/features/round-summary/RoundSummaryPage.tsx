@@ -46,6 +46,11 @@ export function RoundSummaryPage() {
   // while the dismissal guard applies only while a redirect might still land (so
   // only `in-flight` suppresses).
   const signInStateRef = useRef<'none' | 'in-flight' | 'failed'>('none')
+  // Latches the permanent opt-out. Unlike "Not now", that path awaits a Dexie
+  // write before it clears state, so the button stays live and mounted across
+  // the await — and a double-tap would report the opt-out twice, inflating the
+  // one metric meant to reveal that this prompt is unwelcome.
+  const dismissingRef = useRef(false)
 
   const [loaded, setLoaded] = useState(false)
   useEffect(() => {
@@ -138,6 +143,7 @@ export function RoundSummaryPage() {
         await recordCloudPromptShown(completedCount)
         trackEvent('cloud_prompt_shown', { rounds_saved: completedCount })
         signInStateRef.current = 'none'
+        dismissingRef.current = false
         setCloudPrompt({ count: completedCount, repeat: isRepeatCloudPrompt(prefs) })
         setSaving(false)
         return
@@ -173,6 +179,8 @@ export function RoundSummaryPage() {
   }
 
   async function handleCloudPromptForever() {
+    if (dismissingRef.current) return
+    dismissingRef.current = true
     // Suppression is best-effort — if the write fails the next milestone simply
     // re-asks. What must not fail is the dismissal itself: tapping the permanent
     // opt-out and having the modal just sit there is the worst outcome for the

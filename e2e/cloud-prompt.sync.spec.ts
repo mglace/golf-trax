@@ -86,7 +86,7 @@ test.describe('Cloud prompt after saving a round', () => {
     await playAndSaveRound(page)
 
     await page.getByLabel('Email address').fill('not-an-email')
-    await page.getByRole('button', { name: 'Send link' }).click()
+    await page.getByRole('button', { name: 'Continue' }).click()
 
     await expect(page.getByRole('alert')).toHaveText('Enter a valid email address.')
     await expect(page.getByRole('dialog')).toBeVisible()
@@ -97,7 +97,7 @@ test.describe('Cloud prompt after saving a round', () => {
   test('rejects an empty email rather than redirecting', async ({ page }) => {
     await playAndSaveRound(page)
 
-    await page.getByRole('button', { name: 'Send link' }).click()
+    await page.getByRole('button', { name: 'Continue' }).click()
 
     await expect(page.getByRole('alert')).toHaveText('Enter a valid email address.')
     await expect(page.getByRole('dialog')).toBeVisible()
@@ -113,7 +113,7 @@ test.describe('Cloud prompt after saving a round', () => {
     )
 
     await page.getByLabel('Email address').fill('golfer@example.com')
-    await page.getByRole('button', { name: 'Send link' }).click()
+    await page.getByRole('button', { name: 'Continue' }).click()
 
     const url = new URL((await authorize).url())
     // The address typed in-app is carried over, so Auth0's screen opens

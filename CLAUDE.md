@@ -100,7 +100,7 @@ Code is organized by responsibility, and the dependency direction matters:
 - **`src/sync/`** — the client sync engine (Dexie + fetch glue that composes the
   pure decisions from `domain/sync.ts`).
 - **`src/features/`** — one folder per screen/flow (home, course-search,
-  round-entry, round-summary, history, stats, settings).
+  round-entry, round-summary, history, stats, settings, onboarding).
 
 ### Data model
 
