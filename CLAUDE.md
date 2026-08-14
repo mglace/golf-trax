@@ -48,6 +48,16 @@ production runs), use the SWA emulator instead of `npm run dev` alone:
 npm run swa:start          # swa start — fronts the Vite dev server + api/
 ```
 
+Playwright runs **two projects against two dev servers**, because the account
+surface is compiled out unless `VITE_AUTH0_*` is set at build time:
+
+- `chromium` (port 5173, no Auth0) — the default. Proves the local-only MVP.
+- `chromium-sync` (port 5174, dummy Auth0 values) — runs only `*.sync.spec.ts`,
+  with the fake tenant stubbed via `page.route`. Name a spec `*.sync.spec.ts`
+  when it needs the sign-in/sync surface to exist.
+
+`npm run test:e2e` runs both; add `--project=chromium` to scope.
+
 Vitest is deliberately scoped to `src/**/*.{test,spec}.{ts,tsx}` (see
 `vite.config.ts`) so it never tries to run the api workspace's Node-native tests.
 There is no combined test command — the three suites (Vitest, `api/`'s
@@ -127,17 +137,27 @@ title) stays readable instead of folding every route into one "GolfTrax" row.
 The sanitized pattern is installed as the default `page_location` via
 `gtag('set', …)`, so GA's own hits (`session_start`, `user_engagement`) inherit
 it too — not just the manual `page_view`. `trackEvent()` sends custom GA4
-events; two are wired today, both from the feature layer (never `db/`/`domain/`,
-which stay side-effect-free) and both carrying **only non-identifying
-dimensions** — no opaque round/course ids, matching the route-pattern rule
-above: `round_started` (params `round_length`, `hole_count`) when a draft round
-is created in Course Setup, and `round_completed` (params `round_length`,
-`hole_count`, `holes_entered`, `is_complete`, `total_score`, `vs_par`) when a
-round is finalized in Round Summary. Because saving a partially-scored round is
-supported, `total_score`/`vs_par` on `round_completed` reflect only the holes
-entered, so `holes_entered`/`is_complete` ride along to keep partial rounds
-separable (see the custom-definitions note below for what surfaces them in
-reports). The measurement id is a public value, safe to inline.
+events; five are wired today, all from the feature layer (never `db/`/`domain/`,
+which stay side-effect-free) and all carrying **only non-identifying
+dimensions** — no opaque round/course ids, and never the email the user typed,
+matching the route-pattern rule above:
+
+- `round_started` (params `round_length`, `hole_count`) when a draft round is
+  created in Course Setup.
+- `round_completed` (params `round_length`, `hole_count`, `holes_entered`,
+  `is_complete`, `total_score`, `vs_par`) when a round is finalized in Round
+  Summary. Because saving a partially-scored round is supported,
+  `total_score`/`vs_par` reflect only the holes entered, so
+  `holes_entered`/`is_complete` ride along to keep partial rounds separable.
+- `cloud_prompt_shown` / `cloud_prompt_dismissed` / `cloud_signin_started`
+  (param `rounds_saved`; `cloud_prompt_dismissed` also carries `is_permanent`)
+  — the post-save cloud-prompt funnel, fired from Round Summary. Together they
+  give the offer→decline→redirect rates the prompt's cadence should be tuned on,
+  and `is_permanent` separates "not now" from "don't ask again" so the opt-out
+  rate — the signal that the prompt is wearing out its welcome — stays visible.
+
+See the custom-definitions note below for what surfaces these params in reports.
+The measurement id is a public value, safe to inline.
 
 To verify a live build, append **`?ga_debug=1`** to the URL: it sets GA4
 `debug_mode` so this client's hits show in GA4 DebugView (Admin → DebugView). It
@@ -151,10 +171,11 @@ Two property-side requirements the code can't enforce:
   otherwise GA fires its own `page_view` on `pushState` using the raw URL,
   re-introducing the id and double-counting.
 - The custom event params above (`round_length`, `hole_count`, `holes_entered`,
-  `is_complete`, `total_score`, `vs_par`) only show up in standard reports and
-  explorations once each is registered under **Admin → Custom definitions** —
-  text params (`round_length`, `is_complete`) as custom dimensions, numeric ones
-  (`hole_count`, `holes_entered`, `total_score`, `vs_par`) as custom metrics.
+  `is_complete`, `total_score`, `vs_par`, `rounds_saved`, `is_permanent`) only
+  show up in standard reports and explorations once each is registered under
+  **Admin → Custom definitions** — text params (`round_length`, `is_complete`,
+  `is_permanent`) as custom dimensions, numeric ones (`hole_count`,
+  `holes_entered`, `total_score`, `vs_par`, `rounds_saved`) as custom metrics.
   Until then they're visible only in DebugView/Realtime and the BigQuery export,
   and registration is **not** retroactive — data collected before a definition
   exists is not backfilled.
@@ -196,6 +217,29 @@ Sync invariants worth knowing before touching this area (full spec in
 Sync is only active when all three `VITE_AUTH0_*` values are present at build time
 (`src/auth/authConfig.ts`); otherwise the entire account/sync surface is inert and
 the app behaves as the local-only MVP.
+
+### Sign-in entry points
+
+Sync has **two** ways in, and both funnel into the same Auth0 passwordless
+redirect — there is deliberately no bespoke signup backend:
+
+1. **Settings → Account & sync** (`features/settings/AccountSection.tsx`) — the
+   permanent home, always available.
+2. **The post-save cloud prompt** (`features/onboarding/CloudPromptModal.tsx`) —
+   offered from Round Summary after a round is finalized, at the completed-round
+   milestones in `domain/cloudPrompt.ts` (1/3/5, once each). Device-local prompt
+   state lives in the Dexie `prefs` table (`db/prefsRepo.ts`), deliberately
+   **not** on `Profile`, which syncs.
+
+`AuthValue.login` takes an optional `{ email }` — supplied, it becomes Auth0's
+`login_hint` + `connection: 'email'` so the hosted screen opens pre-filled. It
+must therefore always be called explicitly (`onClick={() => login()}`), never
+passed straight to a handler, or the DOM event lands in the options bag.
+
+**No claim/device-id layer exists or is needed.** Rounds created signed-out carry
+`owner: 'local'` and are adopted by `prepareMerge()` on the first push after
+sign-in (§6.4 above) — round ids are client UUIDs, so the merge is collision-free
+without server coordination.
 
 ### PWA / service worker
 

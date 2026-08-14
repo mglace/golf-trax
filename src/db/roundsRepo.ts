@@ -131,6 +131,20 @@ export async function countRounds(): Promise<number> {
 }
 
 /**
+ * Count of live *completed* rounds — the figure the cloud prompt keys off, and
+ * what a user means by "my rounds". Unlike {@link countRounds} this excludes
+ * drafts, and unlike {@link getCompletedRounds} it counts on the `status` index
+ * without deserializing every record.
+ */
+export async function countCompletedRounds(): Promise<number> {
+  return db.rounds
+    .where('status')
+    .equals('complete')
+    .filter((r) => !r.deletedAt)
+    .count()
+}
+
+/**
  * Whether at least one live (non-tombstoned) round exists. Unlike
  * {@link countRounds}, this stops at the first live round instead of reading
  * and deserializing every record, so for a populated library it's far cheaper

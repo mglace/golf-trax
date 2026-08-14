@@ -270,6 +270,14 @@ interval while the app is foregrounded. All sync is best-effort and idempotent.
 - **Settings** (the page added in the hardening pass) gains a **Sign in** /
   account section and a **sync status** line ("All changes synced" / "Syncing…"
   / "Offline — will sync later" / "Sign in to sync across devices").
+- **A post-save prompt** (added later) offers the account from Round Summary
+  after a round is finalized, at the 1st/3rd/5th completed round, so sync is
+  discoverable from the core flow rather than only from Settings. It takes an
+  email in-app and passes it to Auth0 as a `login_hint`; the adoption that
+  follows is the ordinary §6.4 merge, with **no claim endpoint or device id**.
+  It stays an invitation: the round is already saved locally before it renders,
+  it is dismissible, and it carries a permanent opt-out on repeat showings —
+  §2's "accounts are optional" is not weakened by asking.
 - Existing **backup export/import stays** — it's the escape hatch and the
   local-only user's story; nothing here removes it.
 - No blocking spinners tied to sync; the app never waits on the network to

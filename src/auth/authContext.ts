@@ -4,6 +4,15 @@
  */
 import { createContext, useContext } from 'react'
 
+export interface LoginOptions {
+  /**
+   * Pre-fill the sign-in screen with this address. Set when the user has
+   * already typed their email in-app (the post-save cloud prompt), so the
+   * hosted login page opens filled in rather than asking a second time.
+   */
+  email?: string
+}
+
 export interface AuthValue {
   /** Whether account sync is configured in this build. */
   isConfigured: boolean
@@ -13,7 +22,12 @@ export interface AuthValue {
   /** Stable account id (the JWT `sub`), or null when signed out/unconfigured. */
   userId: string | null
   email: string | null
-  login: () => void
+  /**
+   * Start the sign-in redirect. Callers must invoke it explicitly
+   * (`onClick={() => login()}`) rather than passing it straight to a handler, or
+   * the DOM event lands in {@link LoginOptions}.
+   */
+  login: (options?: LoginOptions) => void
   logout: () => void
   /** A bearer access token, or null if one can't be obtained (offline/expired). */
   getToken: () => Promise<string | null>

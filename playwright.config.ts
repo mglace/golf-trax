@@ -44,6 +44,20 @@ const executablePath = resolveChromiumPath()
 const PORT = 5173
 const BASE_URL = `http://localhost:${PORT}`
 
+/**
+ * A second dev server built *with* Auth0 configured, so the optional
+ * account/sync surface actually renders. The whole surface is gated at build
+ * time on `VITE_AUTH0_*` (`src/auth/authConfig.ts`), which means the default
+ * server above can never exercise it — and equally, tests on that server prove
+ * the local-only MVP is untouched.
+ *
+ * The values are deliberately fake: specs stub `auth.example.test` at the
+ * network boundary, so no test ever reaches a real tenant.
+ */
+const SYNC_PORT = 5174
+const SYNC_BASE_URL = `http://localhost:${SYNC_PORT}`
+export const AUTH0_TEST_DOMAIN = 'auth.example.test'
+
 export default defineConfig({
   testDir: './e2e',
   // Fail the CI build if a test.only is accidentally committed.
@@ -62,15 +76,41 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
+      testIgnore: /\.sync\.spec\.ts$/,
       use: { ...devices['Pixel 7'], launchOptions: { executablePath } },
     },
+    {
+      // Specs named `*.sync.spec.ts` need the account surface, so they run
+      // against the sync-enabled server instead.
+      name: 'chromium-sync',
+      testMatch: /\.sync\.spec\.ts$/,
+      use: {
+        ...devices['Pixel 7'],
+        baseURL: SYNC_BASE_URL,
+        launchOptions: { executablePath },
+      },
+    },
   ],
-  webServer: {
-    command: `npm run dev -- --port ${PORT} --strictPort`,
-    url: BASE_URL,
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-    // Force proxy mode: the client talks to /api/search, which the tests stub.
-    env: { VITE_GOLF_API_KEY: '' },
-  },
+  webServer: [
+    {
+      command: `npm run dev -- --port ${PORT} --strictPort`,
+      url: BASE_URL,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+      // Force proxy mode: the client talks to /api/search, which the tests stub.
+      env: { VITE_GOLF_API_KEY: '' },
+    },
+    {
+      command: `npm run dev -- --port ${SYNC_PORT} --strictPort`,
+      url: SYNC_BASE_URL,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+      env: {
+        VITE_GOLF_API_KEY: '',
+        VITE_AUTH0_DOMAIN: AUTH0_TEST_DOMAIN,
+        VITE_AUTH0_CLIENT_ID: 'e2e-client-id',
+        VITE_AUTH0_AUDIENCE: 'https://api.example.test',
+      },
+    },
+  ],
 })

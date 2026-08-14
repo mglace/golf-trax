@@ -23,7 +23,17 @@ function ConfiguredAuth({ children }: { children: ReactNode }) {
     isAuthenticated: a0.isAuthenticated,
     userId: a0.user?.sub ?? null,
     email: a0.user?.email ?? null,
-    login: () => void a0.loginWithRedirect(),
+    // With an email in hand (the post-save cloud prompt), hand Auth0 a
+    // `login_hint` so its screen opens pre-filled, and target the passwordless
+    // `email` connection directly — the user typed their address once, in the
+    // app, and shouldn't be asked again. Without one (the Settings button), send
+    // no params at all so Universal Login keeps whatever the tenant offers.
+    login: (options) =>
+      void a0.loginWithRedirect(
+        options?.email
+          ? { authorizationParams: { login_hint: options.email, connection: 'email' } }
+          : undefined,
+      ),
     logout: () => void a0.logout({ logoutParams: { returnTo: window.location.origin } }),
     getToken: async () => {
       try {

@@ -4,6 +4,7 @@ import { PlusIcon } from '@/components/icons'
 import { hasAnyRound } from '@/db/roundsRepo'
 import { ResumeDraftCard } from './ResumeDraftCard'
 import { HowItWorks } from './HowItWorks'
+import { SignedInBanner } from './SignedInBanner'
 
 /**
  * Home / landing screen. The "New Round" CTA starts the course-search flow, and
@@ -28,6 +29,8 @@ export function HomePage() {
 
   return (
     <div className="py-6">
+      <SignedInBanner />
+
       {libraryEmpty && (
         <div className="mb-6 text-center">
           <p className="text-xl font-bold tracking-tight text-slate-900">

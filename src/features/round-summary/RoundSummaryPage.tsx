@@ -1,10 +1,24 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { getRound, finalizeRound, updateHoleInRound } from '@/db/roundsRepo'
+import {
+  getRound,
+  finalizeRound,
+  updateHoleInRound,
+  countCompletedRounds,
+} from '@/db/roundsRepo'
+import {
+  getCloudPromptPrefs,
+  recordCloudPromptShown,
+  dismissCloudPromptForever,
+  setPendingSignIn,
+} from '@/db/prefsRepo'
 import { triggerSync } from '@/sync/controller'
+import { useAuth } from '@/auth/authContext'
 import { trackEvent } from '@/analytics/gtag'
 import { computeTotals, ROUND_LENGTH_LABEL } from '@/domain/round'
+import { shouldPromptForCloud, isRepeatCloudPrompt } from '@/domain/cloudPrompt'
+import { CloudPromptModal } from '@/features/onboarding/CloudPromptModal'
 import { ChevronLeftIcon, SpinnerIcon } from '@/components/icons'
 import { StatsWidget } from './StatsWidget'
 import { Scorecard } from './Scorecard'
@@ -19,8 +33,13 @@ export function RoundSummaryPage() {
   const navigate = useNavigate()
   const { roundId } = useParams<{ roundId: string }>()
   const round = useLiveQuery(() => (roundId ? getRound(roundId) : undefined), [roundId])
+  const { isConfigured, isAuthenticated, login } = useAuth()
   const [saving, setSaving] = useState(false)
   const [editIndex, setEditIndex] = useState<number | null>(null)
+  // Non-null while the post-save cloud prompt is up; carries what the copy needs.
+  const [cloudPrompt, setCloudPrompt] = useState<{ count: number; repeat: boolean } | null>(
+    null,
+  )
 
   const [loaded, setLoaded] = useState(false)
   useEffect(() => {
@@ -81,7 +100,56 @@ export function RoundSummaryPage() {
     })
     // Best-effort: push the finalized round now if signed in (no-op otherwise).
     triggerSync()
+
+    // Signed out on a sync-enabled build, this is the one moment the app has
+    // something worth keeping to point at — offer the account here rather than
+    // leaving sync discoverable only from Settings. The round is already saved,
+    // so the prompt delays nothing but the navigation.
+    const [completedCount, prefs] = await Promise.all([
+      countCompletedRounds(),
+      getCloudPromptPrefs(),
+    ])
+    if (shouldPromptForCloud({ isConfigured, isAuthenticated, completedCount, prefs })) {
+      // Record before rendering: a user who force-quits mid-prompt shouldn't be
+      // asked again at the same milestone.
+      await recordCloudPromptShown(completedCount)
+      trackEvent('cloud_prompt_shown', { rounds_saved: completedCount })
+      setCloudPrompt({ count: completedCount, repeat: isRepeatCloudPrompt(prefs) })
+      setSaving(false)
+      return
+    }
+
     navigate('/rounds')
+  }
+
+  // `is_permanent` separates "not now" from "don't ask again" — the opt-out rate
+  // is the signal for whether this prompt is wearing out its welcome, and it's
+  // invisible if both decline paths report identically.
+  function dismissCloudPrompt(permanent = false) {
+    trackEvent('cloud_prompt_dismissed', {
+      rounds_saved: cloudPrompt?.count ?? 0,
+      is_permanent: permanent,
+    })
+    setCloudPrompt(null)
+    navigate('/rounds')
+  }
+
+  async function handleCloudPromptForever() {
+    await dismissCloudPromptForever()
+    dismissCloudPrompt(true)
+  }
+
+  async function handleCloudPromptSubmit(email: string) {
+    // Flag the round-trip so Home can confirm the sign-in landed; a failure here
+    // must not block the redirect, which is the actual point of the flow.
+    try {
+      await setPendingSignIn(true)
+    } catch {
+      /* presentation only — proceed to sign-in regardless */
+    }
+    trackEvent('cloud_signin_started', { rounds_saved: cloudPrompt?.count ?? 0 })
+    // Leaves the app for Auth0's hosted login, pre-filled with this address.
+    login({ email })
   }
 
   return (
@@ -185,6 +253,16 @@ export function RoundSummaryPage() {
           </>
         )}
       </div>
+
+      {cloudPrompt && (
+        <CloudPromptModal
+          roundCount={cloudPrompt.count}
+          showDontAskAgain={cloudPrompt.repeat}
+          onSubmit={(email) => void handleCloudPromptSubmit(email)}
+          onDismiss={() => dismissCloudPrompt()}
+          onDismissForever={() => void handleCloudPromptForever()}
+        />
+      )}
 
       {editIndex !== null && round.holes[editIndex] && (
         <HoleEditSheet

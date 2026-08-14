@@ -7,13 +7,14 @@
  *  - profile: single local profile row.
  */
 import Dexie, { type EntityTable } from 'dexie'
-import type { CachedCourse, Round, Profile, SyncState } from './types'
+import type { CachedCourse, CloudPromptPrefs, Round, Profile, SyncState } from './types'
 
 export class GolfTraxDB extends Dexie {
   courses!: EntityTable<CachedCourse, 'id'>
   rounds!: EntityTable<Round, 'id'>
   profile!: EntityTable<Profile, 'id'>
   syncState!: EntityTable<SyncState, 'id'>
+  prefs!: EntityTable<CloudPromptPrefs, 'id'>
 
   constructor() {
     super('golftrax')
@@ -72,6 +73,17 @@ export class GolfTraxDB extends Dexie {
             if (typeof r.courseId === 'number') r.courseId = String(r.courseId)
           })
       })
+    // v4: add the singleton `prefs` table backing the post-save "save to the
+    // cloud?" prompt. Device-local UI state only — nothing here syncs. A new
+    // table needs no `.upgrade()`; existing rows are untouched and the absent
+    // `cloudPrompt` row reads as "never prompted".
+    this.version(4).stores({
+      courses: 'id, lastPlayedDate',
+      rounds: 'id, status, date, courseId, dirty, deletedAt',
+      profile: 'id',
+      syncState: 'id',
+      prefs: 'id',
+    })
   }
 }
 

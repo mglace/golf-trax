@@ -91,7 +91,7 @@ export function AccountSection() {
           </p>
           <button
             type="button"
-            onClick={login}
+            onClick={() => login()}
             className="mt-4 flex min-h-[48px] w-full items-center justify-center rounded-xl bg-fairway-700 px-4 py-3 font-semibold text-white active:bg-fairway-800"
           >
             Sign in to sync
