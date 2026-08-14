@@ -62,7 +62,9 @@ outside Vite's dev range (5173 and its auto-increments) on purpose — on a shar
 port, `reuseExistingServer` would hand the suite a `npm run dev` server and
 silently discard that pinning.
 
-`npm run test:e2e` runs both; add `--project=chromium` to scope.
+`npm run test:e2e` runs both. `--project=chromium` scopes which **tests** run,
+not which servers start — Playwright boots every `webServer` entry regardless,
+so both Vite servers come up either way.
 
 Vitest is deliberately scoped to `src/**/*.{test,spec}.{ts,tsx}` (see
 `vite.config.ts`) so it never tries to run the api workspace's Node-native tests.

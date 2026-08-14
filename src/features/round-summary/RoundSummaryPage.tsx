@@ -220,9 +220,16 @@ export function RoundSummaryPage() {
       // decline, and must report as one. Only an *in-flight* hand-off suppresses
       // the dismissal.
       signInStateRef.current = 'failed'
-      // Keep the persisted half of the hand-off state in step with the ref —
-      // otherwise the flag survives, and a later unrelated sign-in from Settings
-      // greets the user with a banner for a post-save sign-in that never landed.
+      // Keep the persisted half of the hand-off state in step with the ref, so
+      // this failure doesn't leave the flag set for a later, unrelated sign-in
+      // from Settings to trip.
+      //
+      // This closes the *rejected* hand-off only. If the redirect succeeds and
+      // the user backs out at Auth0's screen and returns signed-out, the flag
+      // survives and that stale banner can still appear once. Nothing rejects
+      // there and the page can't tell "came back from abandoning" from
+      // "returned later", so it stays open deliberately — the banner is
+      // presentational and its text is accurate whenever it does show.
       void clearPendingSignIn()
       // Rethrow — the modal needs this to clear its pending state and say so.
       throw err
