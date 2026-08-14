@@ -7,6 +7,7 @@
  * via Universal Login). Signed in → the account email, a live sync-status line,
  * and sign-out. Nothing here blocks on the network (§7).
  */
+import { useState } from 'react'
 import { useAuth } from '@/auth/authContext'
 import { useSyncStore, type SyncStatus } from '@/sync/syncStore'
 import { clearAccountRounds } from '@/sync/syncClient'
@@ -39,9 +40,25 @@ function StatusLine() {
 
 export function AccountSection() {
   const { isConfigured, isLoading, isAuthenticated, email, login, logout } = useAuth()
+  const [signInError, setSignInError] = useState<string>()
 
   // Local-only build: no account surface at all.
   if (!isConfigured) return null
+
+  // `login` rejects when the hand-off fails before the browser navigates (see
+  // {@link AuthValue.login}). Floating that promise would leave an unhandled
+  // rejection and — worse for the user — make this button appear to do nothing,
+  // with being offline the likeliest cause on an app used out on a course. The
+  // post-save cloud prompt reports the same failure inline; this keeps both
+  // sign-in entry points honest about it.
+  async function handleSignIn() {
+    setSignInError(undefined)
+    try {
+      await login()
+    } catch {
+      setSignInError('Couldn’t start sign-in. Check your connection and try again.')
+    }
+  }
 
   // Sign-out clears this device's account-owned rounds before redirecting, so a
   // shared device never leaks one account's synced data into the next session
@@ -91,11 +108,16 @@ export function AccountSection() {
           </p>
           <button
             type="button"
-            onClick={() => login()}
+            onClick={() => void handleSignIn()}
             className="mt-4 flex min-h-[48px] w-full items-center justify-center rounded-xl bg-fairway-700 px-4 py-3 font-semibold text-white active:bg-fairway-800"
           >
             Sign in to sync
           </button>
+          {signInError && (
+            <p role="alert" className="mt-2 text-sm text-red-600">
+              {signInError}
+            </p>
+          )}
         </>
       )}
     </section>
