@@ -146,7 +146,15 @@ export function RoundSummaryPage() {
   }
 
   async function handleCloudPromptForever() {
-    await dismissCloudPromptForever()
+    // Suppression is best-effort — if the write fails the next milestone simply
+    // re-asks. What must not fail is the dismissal itself: tapping the permanent
+    // opt-out and having the modal just sit there is the worst outcome for the
+    // one control that exists to stop this prompt.
+    try {
+      await dismissCloudPromptForever()
+    } catch {
+      /* fall through — dismiss regardless */
+    }
     dismissCloudPrompt(true)
   }
 

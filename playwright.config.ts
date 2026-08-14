@@ -97,8 +97,19 @@ export default defineConfig({
       url: BASE_URL,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
-      // Force proxy mode: the client talks to /api/search, which the tests stub.
-      env: { VITE_GOLF_API_KEY: '' },
+      // Pin every build-time gate this project's guarantees rest on, so a
+      // developer's `.env.local` can't change what is under test. Vite lets
+      // `.env.local` win for any key absent from `process.env`, and
+      // `.env.example` — which DEPLOY.md says to copy — ships all four of these
+      // truthy. Blank: forces proxy mode (the client talks to /api/search, which
+      // the tests stub) and keeps the account surface compiled out, which is the
+      // whole point of the local-only specs.
+      env: {
+        VITE_GOLF_API_KEY: '',
+        VITE_AUTH0_DOMAIN: '',
+        VITE_AUTH0_CLIENT_ID: '',
+        VITE_AUTH0_AUDIENCE: '',
+      },
     },
     {
       command: `npm run dev -- --port ${SYNC_PORT} --strictPort`,

@@ -23,15 +23,24 @@ import { SpinnerIcon, XIcon } from '@/components/icons'
 export function SignedInBanner() {
   const { isAuthenticated, email } = useAuth()
   const prefs = useLiveQuery(() => getCloudPromptPrefs(), [], undefined)
-  // No default: the copy quotes this number, and the two live queries resolve
-  // independently. Defaulting to 0 would let the banner render before the count
-  // arrives and announce "Your 0 rounds are safe in the cloud." to someone who
-  // by construction has at least one — the prompt can't fire at zero rounds.
-  const roundCount = useLiveQuery(() => countCompletedRounds(), [])
+  const pending = prefs?.pendingSignIn === true
+  // Gated on what actually decides visibility, and left without a default.
+  //
+  // Gated because `countCompletedRounds()` can't use an index for its tombstone
+  // predicate, so it opens a value cursor and deserializes every completed round
+  // with its full `holes` array — an unwelcome cost on the cold-start route, and
+  // pure waste on a local-only build where this banner can never render.
+  //
+  // Undefaulted because the copy below quotes this number: the two live queries
+  // resolve independently, so a default of 0 would let the banner render early
+  // and announce "0 rounds" to someone who by construction has at least one.
+  const roundCount = useLiveQuery(
+    () => (isAuthenticated && pending ? countCompletedRounds() : undefined),
+    [isAuthenticated, pending],
+  )
   const status = useSyncStore((s) => s.status)
 
-  const visible =
-    isAuthenticated && prefs?.pendingSignIn === true && roundCount !== undefined
+  const visible = isAuthenticated && pending && roundCount !== undefined
 
   // Clear the flag once the banner goes away — dismissed, or simply navigated
   // past. Either way it has been seen, so it shouldn't greet them again.
@@ -51,7 +60,10 @@ export function SignedInBanner() {
   // tick later — so it reads as "starting", like 'syncing'.
   const detail =
     status === 'synced'
-      ? `Your ${rounds} are safe in the cloud.`
+      ? // Verb agrees with the count: the first milestone is 1, so "1 round" is
+        // the likeliest thing this banner ever says. The branches below read
+        // correctly either way.
+        `Your ${rounds} ${roundCount === 1 ? 'is' : 'are'} safe in the cloud.`
       : status === 'offline'
         ? `Your ${rounds} will sync when you reconnect.`
         : status === 'error'
