@@ -194,10 +194,18 @@ export function RoundSummaryPage() {
     }
     trackEvent('cloud_signin_started', { rounds_saved: cloudPrompt?.count ?? 0 })
     signInStartedRef.current = true
-    // Leaves the app for Auth0's hosted login, pre-filled with this address.
-    // Deliberately unguarded: a rejection means the redirect never started, and
-    // the modal needs it to clear its pending state and say so.
-    await login({ email })
+    try {
+      // Leaves the app for Auth0's hosted login, pre-filled with this address.
+      await login({ email })
+    } catch (err) {
+      // The redirect never started, so there is no pending conversion to protect
+      // and the user is back in the modal: a decline from here is a real
+      // decline, and must report as one. Only an *in-flight* hand-off suppresses
+      // the dismissal.
+      signInStartedRef.current = false
+      // Rethrow — the modal needs this to clear its pending state and say so.
+      throw err
+    }
   }
 
   return (

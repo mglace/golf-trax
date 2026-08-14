@@ -20,10 +20,18 @@ export async function getCloudPromptPrefs(): Promise<CloudPromptPrefs | undefine
  * Merge a patch into the singleton row, creating it if absent. `db.prefs.update`
  * is a no-op on a missing key, so read-then-put is what makes the first write
  * work.
+ *
+ * Transactional because that read-then-write is otherwise racy: two overlapping
+ * calls can interleave and let the later `put` write a snapshot taken before the
+ * earlier one's change, silently dropping it. Today's call sites are effectively
+ * serialised, but IndexedDB is shared across tabs and this is an installable
+ * PWA, so two tabs are enough to reach it.
  */
 async function patch(changes: Partial<CloudPromptPrefs>): Promise<void> {
-  const current = await db.prefs.get(CLOUD_PROMPT_ID)
-  await db.prefs.put({ ...current, ...changes, id: CLOUD_PROMPT_ID })
+  await db.transaction('rw', db.prefs, async () => {
+    const current = await db.prefs.get(CLOUD_PROMPT_ID)
+    await db.prefs.put({ ...current, ...changes, id: CLOUD_PROMPT_ID })
+  })
 }
 
 /**
