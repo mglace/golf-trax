@@ -60,6 +60,14 @@ describe('Dexie v3 → v4 upgrade', () => {
 
     // Imported only after the legacy database exists, so the singleton opens
     // against v3 data rather than creating an empty v4 store first.
+    //
+    // This leans on Vitest's per-file isolation (the default): a fresh module
+    // registry and a fresh fake-indexeddb per file are what let the import land
+    // *after* the seed. Under `isolate: false` another file could already have
+    // imported and opened `./db` at v4, and this would stop testing an upgrade.
+    // If that setting ever changes, this test needs rethinking rather than
+    // patching — an assertion here that quietly stops exercising the migration
+    // is worse than no assertion.
     const { db } = await import('./db')
     await db.open()
 
