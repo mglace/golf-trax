@@ -92,15 +92,13 @@ describe('initAnalytics (unconfigured)', () => {
 })
 
 describe('initAnalytics (configured)', () => {
-  it('injects gtag.js for the measurement id and configures with send_page_view:false', async () => {
+  it('installs the gtag shim and configures with send_page_view:false, without loading the script', async () => {
     const { mod, dom } = await loadGtag({ measurementId: 'G-TEST123' })
     mod.initAnalytics()
 
     expect(typeof dom.win.gtag).toBe('function')
-    expect(dom.appended).toHaveLength(1)
-    expect(dom.appended[0].src).toBe(
-      'https://www.googletagmanager.com/gtag/js?id=G-TEST123',
-    )
+    // The <script> is deferred to loadGtagScript — init only queues commands.
+    expect(dom.appended).toHaveLength(0)
 
     const config = calls(dom.win).find((c) => c[0] === 'config')
     expect(config?.[1]).toBe('G-TEST123')
@@ -115,11 +113,37 @@ describe('initAnalytics (configured)', () => {
     expect(config?.[2]).toMatchObject({ debug_mode: true })
   })
 
-  it('is idempotent — a second call injects no second script', async () => {
+  it('is idempotent — a second call does not re-queue config', async () => {
     const { mod, dom } = await loadGtag({ measurementId: 'G-TEST123' })
     mod.initAnalytics()
     mod.initAnalytics()
+    expect(calls(dom.win).filter((c) => c[0] === 'config')).toHaveLength(1)
+  })
+})
+
+describe('loadGtagScript', () => {
+  it('injects the gtag.js <script> for the measurement id', async () => {
+    const { mod, dom } = await loadGtag({ measurementId: 'G-TEST123' })
+    mod.initAnalytics()
+    mod.loadGtagScript()
     expect(dom.appended).toHaveLength(1)
+    expect(dom.appended[0].src).toBe(
+      'https://www.googletagmanager.com/gtag/js?id=G-TEST123',
+    )
+  })
+
+  it('is idempotent — a second call injects no second script', async () => {
+    const { mod, dom } = await loadGtag({ measurementId: 'G-TEST123' })
+    mod.initAnalytics()
+    mod.loadGtagScript()
+    mod.loadGtagScript()
+    expect(dom.appended).toHaveLength(1)
+  })
+
+  it('does nothing when analytics is unconfigured', async () => {
+    const { mod, dom } = await loadGtag(null)
+    mod.loadGtagScript()
+    expect(dom.appended).toHaveLength(0)
   })
 })
 
@@ -170,5 +194,24 @@ describe('trackPageView sanitization (the privacy guarantee on the wire)', () =>
     expect(calls(dom.win).some((c) => c[0] === 'event' && c[1] === 'page_view')).toBe(true)
     // ...and the raw uuid never appears anywhere in the dataLayer.
     expect(JSON.stringify(calls(dom.win))).not.toContain(uuid)
+  })
+})
+
+describe('command queueing before the deferred script load', () => {
+  it('queues page views and events into the dataLayer before gtag.js loads', async () => {
+    const { mod, dom } = await loadGtag({ measurementId: 'G-TEST123' })
+    mod.initAnalytics() // installs the shim + config; no <script> yet
+    expect(dom.appended).toHaveLength(0)
+
+    mod.trackPageView('/')
+    mod.trackEvent('round_completed', { hole_count: 18 })
+
+    // Both queue into the dataLayer even though gtag.js hasn't loaded — it
+    // replays them in order on load. Regression guard: trackEvent must not be
+    // dropped during the deferred-script window (the symmetric gap to page views).
+    const c = calls(dom.win)
+    expect(c.some((x) => x[0] === 'event' && x[1] === 'page_view')).toBe(true)
+    expect(c.some((x) => x[0] === 'event' && x[1] === 'round_completed')).toBe(true)
+    expect(dom.appended).toHaveLength(0)
   })
 })

@@ -1,21 +1,80 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, type ReactElement } from 'react'
 import { createBrowserRouter } from 'react-router-dom'
 import { AppLayout } from '@/components/AppLayout'
 import { HomePage } from '@/features/home/HomePage'
-import { RoundsPage } from '@/features/history/RoundsPage'
-import { CourseSearchPage } from '@/features/course-search/CourseSearchPage'
-import { CourseSetupPage } from '@/features/course-search/CourseSetupPage'
-import { ManualCourseForm } from '@/features/course-search/ManualCourseForm'
 import { RoundEntryPage } from '@/features/round-entry/RoundEntryPage'
 import { RoundSummaryPage } from '@/features/round-summary/RoundSummaryPage'
-import { SettingsPage } from '@/features/settings/SettingsPage'
 import { LazyFallback } from '@/components/LazyFallback'
+import { LazyRouteError } from '@/components/LazyRouteError'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { isChunkLoadError } from '@/components/isChunkLoadError'
 
-// Stats pulls in the charting library (Recharts). Code-split it so the core
-// on-course flow stays lightweight and fast to load / cache offline.
+// Code-split the round-start + peripheral routes so their code doesn't bloat the
+// entry chunk (it was ~55% of it, unused on `/`). The service worker precaches
+// all built JS (vite.config.ts `globPatterns`), so once it's controlling the
+// page these chunks resolve instantly, offline included.
+//
+// EAGER (entry chunk): the app shell, HomePage, and the on-course
+// RoundEntryPage/RoundSummaryPage. CLAUDE.md requires the on-course flow to work
+// offline from a cold first launch, and on the very first visit the SW isn't
+// controlling yet — a lazy chunk there could fail on spotty on-course signal,
+// exactly where it matters most.
+//
+// LAZY: the round-start flow (course search / setup / manual), rounds history,
+// settings, and stats. The round-start flow *does* support offline (search
+// lists cached courses; manual entry needs no network) — but reaching it
+// offline requires a prior online session, which is also when the SW precaches
+// these chunks, so the first-session chunk-fetch risk is bounded, unlike the
+// on-course screens above. Each lazy route is wrapped in an error boundary
+// (keyed per route) so a failed fetch shows a retry instead of a stuck screen.
+const RoundsPage = lazy(() =>
+  import('@/features/history/RoundsPage').then((m) => ({ default: m.RoundsPage })),
+)
+const CourseSearchPage = lazy(() =>
+  import('@/features/course-search/CourseSearchPage').then((m) => ({
+    default: m.CourseSearchPage,
+  })),
+)
+const CourseSetupPage = lazy(() =>
+  import('@/features/course-search/CourseSetupPage').then((m) => ({
+    default: m.CourseSetupPage,
+  })),
+)
+const ManualCourseForm = lazy(() =>
+  import('@/features/course-search/ManualCourseForm').then((m) => ({
+    default: m.ManualCourseForm,
+  })),
+)
+const SettingsPage = lazy(() =>
+  import('@/features/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })),
+)
+// Stats pulls in the charting library (Recharts); splitting it keeps that heavy
+// chunk off the core on-course flow entirely.
 const StatsPage = lazy(() =>
   import('@/features/stats/StatsPage').then((m) => ({ default: m.StatsPage })),
 )
+
+/**
+ * Wrap a lazily-loaded route element in a per-route-keyed error boundary +
+ * Suspense. The `id` key gives each route its own boundary instance: React
+ * Router renders route elements into `AppLayout`'s `<Outlet/>` without a key, so
+ * without this the boundary (and its error state) would be reused across
+ * sibling lazy routes — a failed chunk on one would leave the error screen stuck
+ * when navigating to a healthy one. Keying per route makes each navigation mount
+ * a fresh boundary.
+ *
+ * `shouldCatch={isChunkLoadError}` scopes the reload prompt to a failed chunk
+ * *fetch* (the offline-before-precache case it's for). A genuine render bug in
+ * the loaded page is re-thrown to the router's own error boundary rather than
+ * mislabeled a connection problem behind a reload that just recurs.
+ */
+function lazyRoute(id: string, element: ReactElement): ReactElement {
+  return (
+    <ErrorBoundary key={id} fallback={<LazyRouteError />} shouldCatch={isChunkLoadError}>
+      <Suspense fallback={<LazyFallback />}>{element}</Suspense>
+    </ErrorBoundary>
+  )
+}
 
 /**
  * Route map. The bottom-nav tabs (Home / Rounds / Stats) and the course-search
@@ -38,18 +97,18 @@ export const router = createBrowserRouter([
       // AppHeader (see TabHandle there) — omit it on any route that should
       // keep rendering its own header instead.
       { index: true, element: <HomePage />, handle: {} },
-      { path: 'new', element: <CourseSearchPage /> },
-      { path: 'new/manual', element: <ManualCourseForm /> },
-      { path: 'new/:courseId', element: <CourseSetupPage /> },
-      { path: 'rounds', element: <RoundsPage />, handle: { screen: 'Rounds' } },
-      { path: 'settings', element: <SettingsPage /> },
+      { path: 'new', element: lazyRoute('new', <CourseSearchPage />) },
+      { path: 'new/manual', element: lazyRoute('new-manual', <ManualCourseForm />) },
+      { path: 'new/:courseId', element: lazyRoute('new-course', <CourseSetupPage />) },
+      {
+        path: 'rounds',
+        element: lazyRoute('rounds', <RoundsPage />),
+        handle: { screen: 'Rounds' },
+      },
+      { path: 'settings', element: lazyRoute('settings', <SettingsPage />) },
       {
         path: 'stats',
-        element: (
-          <Suspense fallback={<LazyFallback />}>
-            <StatsPage />
-          </Suspense>
-        ),
+        element: lazyRoute('stats', <StatsPage />),
         handle: { screen: 'Stats' },
       },
     ],

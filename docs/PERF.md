@@ -18,21 +18,41 @@ From `npm run build` (Vite + `vite-plugin-pwa`):
 
 | Asset | Raw | Gzip | When it loads |
 | --- | --- | --- | --- |
-| `index-*.js` (entry) | 372 KB | **120 KB** | Every route, incl. the on-course entry flow |
-| `StatsPage-*.js` | 394 KB | **109 KB** | Lazy — only when `/stats` is opened |
-| `index-*.css` | 22 KB | **4.9 KB** | Every route |
+| `index-*.js` (entry) | 364 KB | **119 KB** | First paint — app shell + home + on-course round flow |
+| `StatsPage-*.js` | 395 KB | **109 KB** | Lazy — only when `/stats` is opened |
+| `Auth0Root-*.js` | 209 KB | **61 KB** | Lazy — only *executed* in a sync-enabled build (precached in all builds) |
+| `CourseSearchPage-*.js` | 13 KB | **4.2 KB** | Lazy — `/new` |
+| `SettingsPage-*.js` | 10 KB | **3.6 KB** | Lazy — `/settings` |
+| `ManualCourseForm-*.js` | 7 KB | **1.9 KB** | Lazy — `/new/manual` |
+| `CourseSetupPage-*.js` | 6 KB | **2.3 KB** | Lazy — `/new/:courseId` |
+| `RoundsPage-*.js` | 5 KB | **2.2 KB** | Lazy — `/rounds` |
+| shared (`ConfirmDialog`, `ApiErrorMessage`) | ~3 KB | **~1.4 KB** | With the routes that import them |
+| `index-*.css` | 24 KB | **5.2 KB** | Every route |
 | 3 × SVG icons | < 0.5 KB each | — | Install / favicon |
-| **SW precache total** | **~772 KB** | ~233 KB | Fetched once at service-worker install |
+| **SW precache total** | **~1.02 MB** | ~312 KB | Fetched once at service-worker install |
 
 ### What's in each chunk
 
-- **Entry chunk (120 KB gzip)** — React + ReactDOM (~45 KB), React Router
-  (~11 KB), Dexie + dexie-react-hooks (~22 KB), Zustand (~1 KB), and all
-  non-Stats app code. This is the critical-path payload for the on-course flow.
+- **Entry chunk (119 KB gzip)** — React + ReactDOM (~45 KB), React Router
+  (~11 KB), Dexie + dexie-react-hooks (~22 KB), Zustand (~1 KB), the app shell,
+  the home screen, and the **on-course round-entry/summary flow**. The core
+  on-course flow is kept in the entry chunk deliberately (not code-split): it
+  must work offline from a cold first launch, before the service worker is
+  controlling the page, so it can't depend on a separate chunk fetch.
+- **Peripheral routes are code-split** (`src/router.tsx`): the course-search
+  flow, settings, rounds history, and stats each load on demand. This lifted
+  ~40 KB raw / ~10 KB gzip of route code that was unused on `/` out of the entry
+  chunk. Each is wrapped in an error boundary so a failed chunk fetch shows a
+  retry instead of blanking the app.
 - **Stats chunk (109 KB gzip)** — dominated by **Recharts**. Correctly
   code-split: `recharts` is imported only in `src/features/stats/TrendChart.tsx`,
   which is reached only through the lazy-loaded `StatsPage` (`src/router.tsx`).
   It never touches the entry chunk.
+- **Auth0 chunk (61 KB gzip)** — the `@auth0/auth0-react` SDK, loaded lazily as
+  a sibling "bridge" (`src/AppRoot.tsx` → `src/auth/Auth0Root.tsx`) so it never
+  blocks first paint. Rollup emits and the SW precaches it in every build, but a
+  local-only build never *executes* it (the bridge renders only when
+  `syncConfig` is set).
 
 ### Findings
 
@@ -78,9 +98,12 @@ Android phone or with mobile emulation + throttling.
       visit, no service worker yet). Target: FCP < 1.8 s, LCP < 2.5 s.
 - [ ] **Warm load** (SW installed): reload and confirm the app shell renders
       near-instantly from cache. This is the load path that must beat 2 s.
-- [ ] **Network tab, cold load:** confirm only the entry chunk (~120 KB gzip)
-      + CSS load initially, and that `StatsPage-*.js` is **not** requested until
-      you navigate to Stats.
+- [ ] **Network tab, cold load:** confirm the entry chunk (~119 KB gzip) + CSS
+      load initially, and that the peripheral-route chunks (`StatsPage-*.js`,
+      `CourseSearchPage-*.js`, `SettingsPage-*.js`, `RoundsPage-*.js`, …) are
+      **not** requested until you navigate to them. `gtag.js` and
+      `Auth0Root-*.js` should also be absent from the first-paint waterfall
+      (deferred to idle / loaded as a sibling bridge respectively).
 - [ ] **Coverage tab:** check for large unused JS/CSS on first paint.
 
 ### Offline (the "works fully offline" metric)

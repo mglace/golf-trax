@@ -39,6 +39,7 @@ declare global {
 }
 
 let initialized = false
+let scriptRequested = false
 
 /** The sanitized `page_location` for a pathname, stripped of query/hash/ids. */
 function sanitizedLocation(pathname: string): string {
@@ -83,24 +84,19 @@ export function initAnalytics(): void {
     dataLayer.push(arguments)
   }
 
-  const script = document.createElement('script')
-  script.async = true
-  script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(
-    config.measurementId,
-  )}`
-  document.head.appendChild(script)
-
-  window.gtag('js', new Date())
+  const gtag = window.gtag
+  gtag('js', new Date())
   // Install the sanitized location as the default BEFORE config, so the
   // session_start / first_visit hits bundled with the first event never carry
-  // the raw landing URL.
-  window.gtag('set', {
+  // the raw landing URL. initAnalytics runs synchronously at startup, so
+  // location.pathname is the true entrance page.
+  gtag('set', {
     page_location: sanitizedLocation(window.location.pathname),
     page_title: toRouteTitle(window.location.pathname),
   })
 
   const debug = wantsGaDebug(window.location.search)
-  window.gtag('config', config.measurementId, {
+  gtag('config', config.measurementId, {
     // We fire page_view ourselves on every route change (see trackPageView).
     send_page_view: false,
     // `?ga_debug=1` → route this client's hits to GA4 DebugView for
@@ -111,6 +107,29 @@ export function initAnalytics(): void {
   if (debug) {
     console.info('[analytics] GA4 debug_mode enabled — hits go to DebugView.')
   }
+}
+
+/**
+ * Inject the gtag.js `<script>`. This is the only part with a real network +
+ * parse/execute cost (the tag is ~168 KB and its evaluation is the longest task
+ * on the main thread), so it's deferred off the critical path (see `main.tsx`).
+ * Order-independent from the commands {@link initAnalytics} and the trackers
+ * queue: gtag.js processes the `dataLayer` in order once it loads. Safe to call
+ * unconfigured / more than once (guards below).
+ */
+export function loadGtagScript(): void {
+  const config = analyticsConfig
+  if (!config) return
+  if (typeof document === 'undefined') return
+  if (scriptRequested) return
+  scriptRequested = true
+
+  const script = document.createElement('script')
+  script.async = true
+  script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(
+    config.measurementId,
+  )}`
+  document.head.appendChild(script)
 }
 
 /**
@@ -131,21 +150,31 @@ function safeGtag(gtag: NonNullable<Window['gtag']>, ...args: unknown[]): void {
 }
 
 /**
- * Record a page view for the given pathname. Updates the default
- * `page_location` to this route's sanitized pattern (and the matching
- * `page_title`) first, so every subsequent hit — this page_view and the
- * engagement events GA sends on its own — reports the pattern rather than the
- * concrete URL. GA4 derives the report path from `page_location`, so no
- * `page_path` is sent.
+ * Set the default `page_location`/`page_title` to a route's sanitized pattern,
+ * then emit its `page_view`. Setting the location first means every subsequent
+ * hit — this page_view and the engagement events GA sends on its own — reports
+ * the pattern rather than the concrete URL. GA4 derives the report path from
+ * `page_location`, so no `page_path` is sent.
  */
-export function trackPageView(pathname: string): void {
-  const gtag = typeof window !== 'undefined' ? window.gtag : undefined
-  if (!analyticsConfig || !gtag) return
+function emitPageView(gtag: NonNullable<Window['gtag']>, pathname: string): void {
   safeGtag(gtag, 'set', {
     page_location: sanitizedLocation(pathname),
     page_title: toRouteTitle(pathname),
   })
   safeGtag(gtag, 'event', 'page_view')
+}
+
+/**
+ * Record a page view for the given pathname. Safe to call before the deferred
+ * gtag.js script has loaded: {@link initAnalytics} installs the `dataLayer` /
+ * `gtag` shim synchronously, so the command queues and gtag.js replays it in
+ * order on load.
+ */
+export function trackPageView(pathname: string): void {
+  if (!analyticsConfig) return
+  const gtag = typeof window !== 'undefined' ? window.gtag : undefined
+  if (!gtag) return
+  emitPageView(gtag, pathname)
 }
 
 /**

@@ -1,11 +1,9 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { RouterProvider } from 'react-router-dom'
 import { router } from './router'
-import { syncConfig } from './auth/authConfig'
-import { AuthContext, INERT } from './auth/authContext'
+import { AppRoot } from './AppRoot'
 import { registerServiceWorker } from './pwa/registerServiceWorker'
-import { initAnalytics } from './analytics/gtag'
+import { initAnalytics, loadGtagScript } from './analytics/gtag'
 import { startPageTracking } from './analytics/pageTracking'
 import './index.css'
 
@@ -15,36 +13,39 @@ const rootEl = document.getElementById('root')!
 // reloads once a new version is found; this triggers the check on foreground).
 registerServiceWorker()
 
-// Optional Google Analytics — inert unless VITE_GA_MEASUREMENT_ID is set in a
-// production build (src/analytics/config.ts). Load gtag.js, then emit a
-// page_view on the initial load and on every subsequent route change.
+// Analytics: install the gtag command queue synchronously, so page views AND
+// custom events (round_started / round_completed) are captured from the very
+// first interaction — the shim is just an in-memory dataLayer, no network or
+// parse cost. `startPageTracking` then subscribes to route changes and emits the
+// entrance page_view into that queue. Only the gtag.js *script* (the largest
+// resource and the longest main-thread task) is deferred off the critical path
+// to the first idle window; gtag.js replays the queued commands in order once it
+// loads. All no-ops when analytics is unconfigured (every entry point self-guards).
 initAnalytics()
 startPageTracking(router)
+whenIdle(() => loadGtagScript())
 
 /**
- * Optional sync is gated at the root: a sync-enabled build dynamically imports
- * the Auth0 root (so the SDK is a separate chunk), while the local-only MVP
- * renders with an inert auth context and never loads Auth0 at all
- * (PHASE2.md §10). Loading the SDK before the first render — rather than via a
- * Suspense swap — keeps the router from remounting.
+ * Run `cb` once the main thread is idle. Prefers `requestIdleCallback`; where
+ * it's unavailable (e.g. iOS Safari before 18.2 — a meaningful slice of this
+ * mobile-first PWA's users) falls back to firing after the `load` event plus a
+ * short delay, so gtag.js still starts after first paint rather than competing
+ * with it. A bare `setTimeout(cb, 1)` would run in the same frame as the initial
+ * render and defer nothing.
  */
-if (syncConfig) {
-  const config = syncConfig
-  void import('./auth/Auth0Root').then(({ default: Auth0Root }) => {
-    ReactDOM.createRoot(rootEl).render(
-      <React.StrictMode>
-        <Auth0Root config={config}>
-          <RouterProvider router={router} />
-        </Auth0Root>
-      </React.StrictMode>,
-    )
-  })
-} else {
-  ReactDOM.createRoot(rootEl).render(
-    <React.StrictMode>
-      <AuthContext.Provider value={INERT}>
-        <RouterProvider router={router} />
-      </AuthContext.Provider>
-    </React.StrictMode>,
-  )
+function whenIdle(cb: () => void): void {
+  if (typeof window === 'undefined') return
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(cb, { timeout: 2000 })
+    return
+  }
+  const deferred = () => window.setTimeout(cb, 500)
+  if (document.readyState === 'complete') deferred()
+  else window.addEventListener('load', deferred, { once: true })
 }
+
+ReactDOM.createRoot(rootEl).render(
+  <React.StrictMode>
+    <AppRoot />
+  </React.StrictMode>,
+)
