@@ -13,23 +13,34 @@ const rootEl = document.getElementById('root')!
 // reloads once a new version is found; this triggers the check on foreground).
 registerServiceWorker()
 
-// Defer optional Google Analytics off the critical load path. gtag.js is the
-// single largest resource and the source of the longest main-thread tasks, so
-// loading it during first paint delays LCP for no user benefit. We wait for the
-// first idle window, then init + start page tracking together — startPageTracking
-// fires the initial page_view itself (and no-ops entirely when analytics is
-// unconfigured), so nothing is lost by deferring the pair as a unit.
+// Subscribe to route changes NOW so no navigation — including the entrance page
+// — is missed. trackPageView buffers these until gtag.js is initialized, so
+// subscribing early costs nothing and preserves GA4's entrance-page attribution
+// even if the user taps through before init runs. Only the gtag.js *load* (the
+// actual cost: the largest resource + the longest main-thread tasks) is deferred
+// off the critical path; running it during first paint delays LCP for no user
+// benefit. A no-op when analytics is unconfigured (both functions self-guard).
+startPageTracking(router)
+whenIdle(() => initAnalytics())
+
+/**
+ * Run `cb` once the main thread is idle. Prefers `requestIdleCallback`; where
+ * it's unavailable (e.g. iOS Safari before 18.2 — a meaningful slice of this
+ * mobile-first PWA's users) falls back to firing after the `load` event plus a
+ * short delay, so gtag.js still starts after first paint rather than competing
+ * with it. A bare `setTimeout(cb, 1)` would run in the same frame as the initial
+ * render and defer nothing.
+ */
 function whenIdle(cb: () => void): void {
-  if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+  if (typeof window === 'undefined') return
+  if (typeof window.requestIdleCallback === 'function') {
     window.requestIdleCallback(cb, { timeout: 2000 })
-  } else {
-    setTimeout(cb, 1)
+    return
   }
+  const deferred = () => window.setTimeout(cb, 500)
+  if (document.readyState === 'complete') deferred()
+  else window.addEventListener('load', deferred, { once: true })
 }
-whenIdle(() => {
-  initAnalytics()
-  startPageTracking(router)
-})
 
 ReactDOM.createRoot(rootEl).render(
   <React.StrictMode>

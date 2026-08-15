@@ -3,12 +3,14 @@ import { RouterProvider } from 'react-router-dom'
 import { router } from './router'
 import { syncConfig } from './auth/authConfig'
 import { AuthContext, INERT, type AuthValue } from './auth/authContext'
+import { ErrorBoundary } from './components/ErrorBoundary'
 
 /**
  * The Auth0 SDK is a heavy, separate chunk that's almost entirely unused at
- * first paint. Load it lazily (only ever imported in a sync-enabled build — a
- * local-only build never references it) so the router can mount and paint
- * immediately.
+ * first paint, so it loads lazily and the router paints without waiting on it.
+ * The chunk is emitted (and precached) in every build — Rollup can't see the
+ * runtime `syncConfig` guard — but a local-only build never *executes* it: the
+ * bridge is only rendered when `syncConfig` is set.
  */
 const Auth0Bridge = lazy(() => import('./auth/Auth0Root'))
 
@@ -30,9 +32,16 @@ export function AppRoot() {
   return (
     <>
       {syncConfig && (
-        <Suspense fallback={null}>
-          <Auth0Bridge config={syncConfig} onValue={setAuth} />
-        </Suspense>
+        // If the Auth0 SDK chunk fails to load (offline first session), degrade
+        // to local-only (INERT) rather than blanking an already-usable app —
+        // cloud sync is never a prerequisite for using GolfTrax. Falling back to
+        // INERT also clears the seeded `isLoading` so the account UI doesn't
+        // hang on a perpetual "Checking your session…" spinner.
+        <ErrorBoundary fallback={null} onError={() => setAuth(INERT)}>
+          <Suspense fallback={null}>
+            <Auth0Bridge config={syncConfig} onValue={setAuth} />
+          </Suspense>
+        </ErrorBoundary>
       )}
       <AuthContext.Provider value={auth}>
         <RouterProvider router={router} />

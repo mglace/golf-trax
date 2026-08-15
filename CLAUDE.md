@@ -86,6 +86,13 @@ Code is organized by responsibility, and the dependency direction matters:
 - **`src/features/`** — one folder per screen/flow (home, course-search,
   round-entry, round-summary, history, stats, settings).
 
+`src/main.tsx` is a thin entry (SW registration + deferred analytics); it renders
+`src/AppRoot.tsx`, which mounts the router immediately and — in a sync-enabled
+build — loads the Auth0 SDK lazily in a **sibling** subtree (`auth/Auth0Root.tsx`)
+that reports its `AuthValue` up into an always-mounted `AuthContext.Provider`.
+This keeps the heavy, first-paint-irrelevant SDK off the critical render path
+without remounting the router. See the PWA/perf notes and `docs/PERF.md`.
+
 ### Data model
 
 `Round` (`src/db/types.ts`) is the central entity. A round **snapshots** the
@@ -115,7 +122,11 @@ never loads, and nothing leaves the device, so `npm run dev`, Vitest, and
 Playwright never touch real metrics. In CI the id is set **only on push-to-main**,
 not on PR preview builds (`azure-static-web-apps.yml`), so preview traffic never
 lands in the production property. `initAnalytics()` / `startPageTracking()` are
-wired once in `main.tsx`; page views fire on route changes and are collapsed to
+wired once in `main.tsx`, but **`initAnalytics()` (the `gtag.js` load) is deferred
+to the first idle window** so it doesn't compete with first paint / LCP.
+`startPageTracking()` still subscribes to the router immediately; `trackPageView`
+buffers hits until init runs and flushes them entrance-first, so deferring never
+loses the landing page_view. Page views fire on route changes and are collapsed to
 **route patterns** (`toRoutePattern` → `/round/:roundId`) so opaque round/course
 ids never reach Google. Any path without an explicit rule still has id-looking
 segments (uuid / numeric / hex / digit-bearing token) collapsed to `:id` as a
@@ -213,8 +224,15 @@ narrow if you edit the workbox config. The SW is disabled in dev.
 `src/router.tsx`: bottom-nav tabs (Home / Rounds / Stats) and the course-search
 flow render inside `AppLayout`; the focused round-entry and round-summary flows
 are top-level full-screen routes (no bottom tabs) to maximize on-course space.
-`StatsPage` is lazy-loaded because it pulls in Recharts — keep the core on-course
-flow off that chunk.
+
+**Code-splitting:** the peripheral routes (course-search flow, settings, rounds
+history, and stats) are `React.lazy`-loaded via the `lazyRoute` helper, which
+wraps each in an `ErrorBoundary` (retry/reload on a failed chunk) + `Suspense`.
+`StatsPage` in particular keeps Recharts off the core flow. The **core on-course
+routes — `HomePage`, `RoundEntryPage`, `RoundSummaryPage` — stay eager in the
+entry chunk on purpose**: they must work offline from a cold first launch (before
+the SW controls the page), so they can't hang on a chunk fetch. Don't lazy-load
+them.
 
 ## Reference docs
 

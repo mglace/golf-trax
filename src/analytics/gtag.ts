@@ -40,6 +40,13 @@ declare global {
 
 let initialized = false
 
+/**
+ * Page views recorded before {@link initAnalytics} has loaded gtag.js (it's
+ * deferred off the critical path — see `main.tsx`). Flushed in order on init so
+ * the entrance page — the first path — is still the first page_view GA4 sees.
+ */
+const bufferedViews: string[] = []
+
 /** The sanitized `page_location` for a pathname, stripped of query/hash/ids. */
 function sanitizedLocation(pathname: string): string {
   return `${window.location.origin}${toRoutePattern(pathname)}`
@@ -90,17 +97,21 @@ export function initAnalytics(): void {
   )}`
   document.head.appendChild(script)
 
-  window.gtag('js', new Date())
+  const gtag = window.gtag
+  gtag('js', new Date())
   // Install the sanitized location as the default BEFORE config, so the
   // session_start / first_visit hits bundled with the first event never carry
-  // the raw landing URL.
-  window.gtag('set', {
-    page_location: sanitizedLocation(window.location.pathname),
-    page_title: toRouteTitle(window.location.pathname),
+  // the raw landing URL. Seed it from the ENTRANCE path (the first buffered
+  // view) rather than the current URL: init is deferred, so by now the user may
+  // have navigated — but GA4's entrance page should still be where they landed.
+  const entrancePath = bufferedViews[0] ?? window.location.pathname
+  gtag('set', {
+    page_location: sanitizedLocation(entrancePath),
+    page_title: toRouteTitle(entrancePath),
   })
 
   const debug = wantsGaDebug(window.location.search)
-  window.gtag('config', config.measurementId, {
+  gtag('config', config.measurementId, {
     // We fire page_view ourselves on every route change (see trackPageView).
     send_page_view: false,
     // `?ga_debug=1` → route this client's hits to GA4 DebugView for
@@ -111,6 +122,12 @@ export function initAnalytics(): void {
   if (debug) {
     console.info('[analytics] GA4 debug_mode enabled — hits go to DebugView.')
   }
+
+  // Flush page views recorded before gtag.js loaded. Replaying them here —
+  // entrance first — means no landing hit is lost and any pre-init navigations
+  // still register, in order.
+  for (const path of bufferedViews) emitPageView(gtag, path)
+  bufferedViews.length = 0
 }
 
 /**
@@ -131,21 +148,37 @@ function safeGtag(gtag: NonNullable<Window['gtag']>, ...args: unknown[]): void {
 }
 
 /**
- * Record a page view for the given pathname. Updates the default
- * `page_location` to this route's sanitized pattern (and the matching
- * `page_title`) first, so every subsequent hit — this page_view and the
- * engagement events GA sends on its own — reports the pattern rather than the
- * concrete URL. GA4 derives the report path from `page_location`, so no
- * `page_path` is sent.
+ * Set the default `page_location`/`page_title` to a route's sanitized pattern,
+ * then emit its `page_view`. Setting the location first means every subsequent
+ * hit — this page_view and the engagement events GA sends on its own — reports
+ * the pattern rather than the concrete URL. GA4 derives the report path from
+ * `page_location`, so no `page_path` is sent. Shared by live tracking and the
+ * deferred-init buffer flush.
  */
-export function trackPageView(pathname: string): void {
-  const gtag = typeof window !== 'undefined' ? window.gtag : undefined
-  if (!analyticsConfig || !gtag) return
+function emitPageView(gtag: NonNullable<Window['gtag']>, pathname: string): void {
   safeGtag(gtag, 'set', {
     page_location: sanitizedLocation(pathname),
     page_title: toRouteTitle(pathname),
   })
   safeGtag(gtag, 'event', 'page_view')
+}
+
+/**
+ * Record a page view for the given pathname. Before {@link initAnalytics} has
+ * loaded gtag.js (deferred off the critical path), the path is buffered instead
+ * and replayed on init — so subscribing to route changes early never loses the
+ * entrance hit or a pre-init navigation.
+ */
+export function trackPageView(pathname: string): void {
+  if (!analyticsConfig) return
+  const gtag = typeof window !== 'undefined' ? window.gtag : undefined
+  if (!initialized || !gtag) {
+    if (bufferedViews[bufferedViews.length - 1] !== pathname) {
+      bufferedViews.push(pathname)
+    }
+    return
+  }
+  emitPageView(gtag, pathname)
 }
 
 /**

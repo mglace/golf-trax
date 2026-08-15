@@ -2,14 +2,25 @@ import { lazy, Suspense, type ReactElement } from 'react'
 import { createBrowserRouter } from 'react-router-dom'
 import { AppLayout } from '@/components/AppLayout'
 import { HomePage } from '@/features/home/HomePage'
+import { RoundEntryPage } from '@/features/round-entry/RoundEntryPage'
+import { RoundSummaryPage } from '@/features/round-summary/RoundSummaryPage'
 import { LazyFallback } from '@/components/LazyFallback'
+import { LazyRouteError } from '@/components/LazyRouteError'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 
-// Only the app shell (AppLayout) and the landing screen (HomePage) load in the
-// entry chunk — they're what the first paint needs. Every other route is
-// code-split so its code doesn't bloat the initial download/parse (it was ~55%
-// of the entry chunk, unused on `/`). The service worker precaches all built JS
-// (see vite.config.ts `globPatterns`), so these chunks are cached on first load
-// and resolve instantly thereafter — including offline, on-course.
+// Code-split the peripheral routes so their code doesn't bloat the entry chunk
+// (it was ~55% of it, unused on `/`). The service worker precaches all built JS
+// (see vite.config.ts `globPatterns`), so these chunks resolve instantly — and
+// offline — once it's controlling the page.
+//
+// The core on-course flow (HomePage, RoundEntryPage, RoundSummaryPage) stays in
+// the entry chunk on purpose: CLAUDE.md requires it to work offline from a cold
+// first launch, and on the very first visit the SW isn't controlling yet, so a
+// lazy chunk there could fail on a flaky on-course connection. Keeping it eager
+// guarantees it's already in memory. The lazy routes below are either
+// connectivity-requiring (course search hits the API) or off the on-course path
+// (rounds history, settings, stats), and each is wrapped in an error boundary
+// so a failed chunk shows a retry instead of blanking the app.
 const RoundsPage = lazy(() =>
   import('@/features/history/RoundsPage').then((m) => ({ default: m.RoundsPage })),
 )
@@ -28,29 +39,24 @@ const ManualCourseForm = lazy(() =>
     default: m.ManualCourseForm,
   })),
 )
-const RoundEntryPage = lazy(() =>
-  import('@/features/round-entry/RoundEntryPage').then((m) => ({
-    default: m.RoundEntryPage,
-  })),
-)
-const RoundSummaryPage = lazy(() =>
-  import('@/features/round-summary/RoundSummaryPage').then((m) => ({
-    default: m.RoundSummaryPage,
-  })),
-)
 const SettingsPage = lazy(() =>
   import('@/features/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })),
 )
-// Stats pulls in the charting library (Recharts); splitting it keeps that chunk
-// off the core on-course flow entirely.
+// Stats pulls in the charting library (Recharts); splitting it keeps that heavy
+// chunk off the core on-course flow entirely.
 const StatsPage = lazy(() =>
   import('@/features/stats/StatsPage').then((m) => ({ default: m.StatsPage })),
 )
 
-/** Wrap a lazily-loaded route element in a Suspense boundary with the shared
- * fallback, so a not-yet-cached chunk shows the spinner instead of throwing. */
+/** Wrap a lazily-loaded route element in an error boundary + Suspense: the
+ * boundary catches a failed chunk fetch (offering a reload), Suspense shows the
+ * spinner while a not-yet-cached chunk loads. */
 function lazyRoute(element: ReactElement): ReactElement {
-  return <Suspense fallback={<LazyFallback />}>{element}</Suspense>
+  return (
+    <ErrorBoundary fallback={<LazyRouteError />}>
+      <Suspense fallback={<LazyFallback />}>{element}</Suspense>
+    </ErrorBoundary>
+  )
 }
 
 /**
@@ -90,6 +96,6 @@ export const router = createBrowserRouter([
       },
     ],
   },
-  { path: '/round/:roundId', element: lazyRoute(<RoundEntryPage />) },
-  { path: '/round/:roundId/summary', element: lazyRoute(<RoundSummaryPage />) },
+  { path: '/round/:roundId', element: <RoundEntryPage /> },
+  { path: '/round/:roundId/summary', element: <RoundSummaryPage /> },
 ])

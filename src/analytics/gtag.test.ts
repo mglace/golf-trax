@@ -172,3 +172,40 @@ describe('trackPageView sanitization (the privacy guarantee on the wire)', () =>
     expect(JSON.stringify(calls(dom.win))).not.toContain(uuid)
   })
 })
+
+describe('trackPageView buffering (deferred gtag.js init)', () => {
+  it('buffers pre-init views and flushes them entrance-first on init', async () => {
+    const { mod, dom } = await loadGtag({ measurementId: 'G-TEST123' })
+
+    // Before init, gtag.js isn't loaded (its load is deferred off the critical
+    // path), so these buffer rather than firing — nothing hits the dataLayer.
+    mod.trackPageView('/')
+    mod.trackPageView('/new')
+    expect(dom.win.dataLayer).toBeUndefined()
+
+    mod.initAnalytics()
+
+    // Both buffered views flushed as page_view events...
+    const pageViews = calls(dom.win).filter(
+      (c) => c[0] === 'event' && c[1] === 'page_view',
+    )
+    expect(pageViews).toHaveLength(2)
+
+    // ...and the entrance page ('/') is the first location set (the pre-config
+    // default seed), so GA4's entrance page stays correct even though '/new'
+    // was visited before init ran.
+    const firstSet = calls(dom.win).find((c) => c[0] === 'set')
+    expect(firstSet?.[1]).toMatchObject({ page_location: 'https://app.test/' })
+  })
+
+  it('de-dupes a repeated pre-init path', async () => {
+    const { mod, dom } = await loadGtag({ measurementId: 'G-TEST123' })
+    mod.trackPageView('/')
+    mod.trackPageView('/')
+    mod.initAnalytics()
+    const pageViews = calls(dom.win).filter(
+      (c) => c[0] === 'event' && c[1] === 'page_view',
+    )
+    expect(pageViews).toHaveLength(1)
+  })
+})
