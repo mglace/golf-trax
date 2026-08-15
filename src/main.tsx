@@ -1,9 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { RouterProvider } from 'react-router-dom'
 import { router } from './router'
-import { syncConfig } from './auth/authConfig'
-import { AuthContext, INERT } from './auth/authContext'
+import { AppRoot } from './AppRoot'
 import { registerServiceWorker } from './pwa/registerServiceWorker'
 import { initAnalytics } from './analytics/gtag'
 import { startPageTracking } from './analytics/pageTracking'
@@ -15,36 +13,26 @@ const rootEl = document.getElementById('root')!
 // reloads once a new version is found; this triggers the check on foreground).
 registerServiceWorker()
 
-// Optional Google Analytics — inert unless VITE_GA_MEASUREMENT_ID is set in a
-// production build (src/analytics/config.ts). Load gtag.js, then emit a
-// page_view on the initial load and on every subsequent route change.
-initAnalytics()
-startPageTracking(router)
-
-/**
- * Optional sync is gated at the root: a sync-enabled build dynamically imports
- * the Auth0 root (so the SDK is a separate chunk), while the local-only MVP
- * renders with an inert auth context and never loads Auth0 at all
- * (PHASE2.md §10). Loading the SDK before the first render — rather than via a
- * Suspense swap — keeps the router from remounting.
- */
-if (syncConfig) {
-  const config = syncConfig
-  void import('./auth/Auth0Root').then(({ default: Auth0Root }) => {
-    ReactDOM.createRoot(rootEl).render(
-      <React.StrictMode>
-        <Auth0Root config={config}>
-          <RouterProvider router={router} />
-        </Auth0Root>
-      </React.StrictMode>,
-    )
-  })
-} else {
-  ReactDOM.createRoot(rootEl).render(
-    <React.StrictMode>
-      <AuthContext.Provider value={INERT}>
-        <RouterProvider router={router} />
-      </AuthContext.Provider>
-    </React.StrictMode>,
-  )
+// Defer optional Google Analytics off the critical load path. gtag.js is the
+// single largest resource and the source of the longest main-thread tasks, so
+// loading it during first paint delays LCP for no user benefit. We wait for the
+// first idle window, then init + start page tracking together — startPageTracking
+// fires the initial page_view itself (and no-ops entirely when analytics is
+// unconfigured), so nothing is lost by deferring the pair as a unit.
+function whenIdle(cb: () => void): void {
+  if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+    window.requestIdleCallback(cb, { timeout: 2000 })
+  } else {
+    setTimeout(cb, 1)
+  }
 }
+whenIdle(() => {
+  initAnalytics()
+  startPageTracking(router)
+})
+
+ReactDOM.createRoot(rootEl).render(
+  <React.StrictMode>
+    <AppRoot />
+  </React.StrictMode>,
+)
