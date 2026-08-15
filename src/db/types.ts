@@ -140,8 +140,8 @@ export interface CloudPromptPrefs {
   /**
    * Set just before redirecting to Auth0, cleared once Home has acknowledged the
    * return. Drives the one-time "your rounds are syncing" banner; purely
-   * presentational, so losing it (e.g. the magic link opens in another browser)
-   * costs nothing.
+   * presentational, so losing it — or leaving it set by abandoning Auth0's
+   * screen without entering the emailed code — costs nothing.
    */
   pendingSignIn?: boolean
 }

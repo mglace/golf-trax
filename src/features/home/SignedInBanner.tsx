@@ -9,8 +9,8 @@
  *
  * Presentational only: it keys off a `pendingSignIn` flag set before the
  * redirect, and clears it once seen, so it shows once and never returns. Losing
- * the flag (e.g. the magic link opens in a different browser) costs nothing but
- * this message.
+ * the flag — or never returning to spend it, e.g. abandoning Auth0's screen
+ * without entering the emailed code — costs nothing but this message.
  */
 import { useEffect, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'

@@ -97,7 +97,7 @@ export function CloudPromptModal({
         <p className="mt-1.5 text-sm text-slate-500">
           Sign in with just your email to reach your{' '}
           {roundCount === 1 ? 'round' : `${roundCount} rounds`} from any device. We’ll email
-          you a sign-in link — no password to remember.
+          you a code to sign in — no password to remember.
         </p>
 
         {/*
