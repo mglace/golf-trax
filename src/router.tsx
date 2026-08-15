@@ -8,19 +8,24 @@ import { LazyFallback } from '@/components/LazyFallback'
 import { LazyRouteError } from '@/components/LazyRouteError'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 
-// Code-split the peripheral routes so their code doesn't bloat the entry chunk
-// (it was ~55% of it, unused on `/`). The service worker precaches all built JS
-// (see vite.config.ts `globPatterns`), so these chunks resolve instantly — and
-// offline — once it's controlling the page.
+// Code-split the round-start + peripheral routes so their code doesn't bloat the
+// entry chunk (it was ~55% of it, unused on `/`). The service worker precaches
+// all built JS (vite.config.ts `globPatterns`), so once it's controlling the
+// page these chunks resolve instantly, offline included.
 //
-// The core on-course flow (HomePage, RoundEntryPage, RoundSummaryPage) stays in
-// the entry chunk on purpose: CLAUDE.md requires it to work offline from a cold
-// first launch, and on the very first visit the SW isn't controlling yet, so a
-// lazy chunk there could fail on a flaky on-course connection. Keeping it eager
-// guarantees it's already in memory. The lazy routes below are either
-// connectivity-requiring (course search hits the API) or off the on-course path
-// (rounds history, settings, stats), and each is wrapped in an error boundary
-// so a failed chunk shows a retry instead of blanking the app.
+// EAGER (entry chunk): the app shell, HomePage, and the on-course
+// RoundEntryPage/RoundSummaryPage. CLAUDE.md requires the on-course flow to work
+// offline from a cold first launch, and on the very first visit the SW isn't
+// controlling yet — a lazy chunk there could fail on spotty on-course signal,
+// exactly where it matters most.
+//
+// LAZY: the round-start flow (course search / setup / manual), rounds history,
+// settings, and stats. The round-start flow *does* support offline (search
+// lists cached courses; manual entry needs no network) — but reaching it
+// offline requires a prior online session, which is also when the SW precaches
+// these chunks, so the first-session chunk-fetch risk is bounded, unlike the
+// on-course screens above. Each lazy route is wrapped in an error boundary
+// (keyed per route) so a failed fetch shows a retry instead of a stuck screen.
 const RoundsPage = lazy(() =>
   import('@/features/history/RoundsPage').then((m) => ({ default: m.RoundsPage })),
 )
@@ -48,12 +53,18 @@ const StatsPage = lazy(() =>
   import('@/features/stats/StatsPage').then((m) => ({ default: m.StatsPage })),
 )
 
-/** Wrap a lazily-loaded route element in an error boundary + Suspense: the
- * boundary catches a failed chunk fetch (offering a reload), Suspense shows the
- * spinner while a not-yet-cached chunk loads. */
-function lazyRoute(element: ReactElement): ReactElement {
+/**
+ * Wrap a lazily-loaded route element in a per-route-keyed error boundary +
+ * Suspense. The `id` key gives each route its own boundary instance: React
+ * Router renders route elements into `AppLayout`'s `<Outlet/>` without a key, so
+ * without this the boundary (and its `hasError` state) would be reused across
+ * sibling lazy routes — a failed chunk on one would leave the error screen stuck
+ * when navigating to a healthy one. Keying per route makes each navigation mount
+ * a fresh boundary.
+ */
+function lazyRoute(id: string, element: ReactElement): ReactElement {
   return (
-    <ErrorBoundary fallback={<LazyRouteError />}>
+    <ErrorBoundary key={id} fallback={<LazyRouteError />}>
       <Suspense fallback={<LazyFallback />}>{element}</Suspense>
     </ErrorBoundary>
   )
@@ -80,18 +91,18 @@ export const router = createBrowserRouter([
       // AppHeader (see TabHandle there) — omit it on any route that should
       // keep rendering its own header instead.
       { index: true, element: <HomePage />, handle: {} },
-      { path: 'new', element: lazyRoute(<CourseSearchPage />) },
-      { path: 'new/manual', element: lazyRoute(<ManualCourseForm />) },
-      { path: 'new/:courseId', element: lazyRoute(<CourseSetupPage />) },
+      { path: 'new', element: lazyRoute('new', <CourseSearchPage />) },
+      { path: 'new/manual', element: lazyRoute('new-manual', <ManualCourseForm />) },
+      { path: 'new/:courseId', element: lazyRoute('new-course', <CourseSetupPage />) },
       {
         path: 'rounds',
-        element: lazyRoute(<RoundsPage />),
+        element: lazyRoute('rounds', <RoundsPage />),
         handle: { screen: 'Rounds' },
       },
-      { path: 'settings', element: lazyRoute(<SettingsPage />) },
+      { path: 'settings', element: lazyRoute('settings', <SettingsPage />) },
       {
         path: 'stats',
-        element: lazyRoute(<StatsPage />),
+        element: lazyRoute('stats', <StatsPage />),
         handle: { screen: 'Stats' },
       },
     ],

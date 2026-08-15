@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { router } from './router'
 import { AppRoot } from './AppRoot'
 import { registerServiceWorker } from './pwa/registerServiceWorker'
-import { initAnalytics } from './analytics/gtag'
+import { initAnalytics, loadGtagScript } from './analytics/gtag'
 import { startPageTracking } from './analytics/pageTracking'
 import './index.css'
 
@@ -13,15 +13,17 @@ const rootEl = document.getElementById('root')!
 // reloads once a new version is found; this triggers the check on foreground).
 registerServiceWorker()
 
-// Subscribe to route changes NOW so no navigation — including the entrance page
-// — is missed. trackPageView buffers these until gtag.js is initialized, so
-// subscribing early costs nothing and preserves GA4's entrance-page attribution
-// even if the user taps through before init runs. Only the gtag.js *load* (the
-// actual cost: the largest resource + the longest main-thread tasks) is deferred
-// off the critical path; running it during first paint delays LCP for no user
-// benefit. A no-op when analytics is unconfigured (both functions self-guard).
+// Analytics: install the gtag command queue synchronously, so page views AND
+// custom events (round_started / round_completed) are captured from the very
+// first interaction — the shim is just an in-memory dataLayer, no network or
+// parse cost. `startPageTracking` then subscribes to route changes and emits the
+// entrance page_view into that queue. Only the gtag.js *script* (the largest
+// resource and the longest main-thread task) is deferred off the critical path
+// to the first idle window; gtag.js replays the queued commands in order once it
+// loads. All no-ops when analytics is unconfigured (every entry point self-guards).
+initAnalytics()
 startPageTracking(router)
-whenIdle(() => initAnalytics())
+whenIdle(() => loadGtagScript())
 
 /**
  * Run `cb` once the main thread is idle. Prefers `requestIdleCallback`; where

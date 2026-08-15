@@ -121,12 +121,14 @@ production build (`config.ts`). Unset → the whole surface is inert, `gtag.js`
 never loads, and nothing leaves the device, so `npm run dev`, Vitest, and
 Playwright never touch real metrics. In CI the id is set **only on push-to-main**,
 not on PR preview builds (`azure-static-web-apps.yml`), so preview traffic never
-lands in the production property. `initAnalytics()` / `startPageTracking()` are
-wired once in `main.tsx`, but **`initAnalytics()` (the `gtag.js` load) is deferred
-to the first idle window** so it doesn't compete with first paint / LCP.
-`startPageTracking()` still subscribes to the router immediately; `trackPageView`
-buffers hits until init runs and flushes them entrance-first, so deferring never
-loses the landing page_view. Page views fire on route changes and are collapsed to
+lands in the production property. `initAnalytics()` and `startPageTracking()` are
+wired once in `main.tsx` and run **synchronously**: `initAnalytics()` installs the
+`gtag`/`dataLayer` command queue (an in-memory shim — no network or parse cost),
+so page views and custom events are captured from the first interaction. Only
+**`loadGtagScript()` (the `gtag.js` script — the largest resource and the longest
+main-thread task) is deferred to the first idle window** so it doesn't compete
+with first paint / LCP; gtag.js replays the queued commands in order once it
+loads. Page views fire on route changes and are collapsed to
 **route patterns** (`toRoutePattern` → `/round/:roundId`) so opaque round/course
 ids never reach Google. Any path without an explicit rule still has id-looking
 segments (uuid / numeric / hex / digit-bearing token) collapsed to `:id` as a
@@ -225,14 +227,19 @@ narrow if you edit the workbox config. The SW is disabled in dev.
 flow render inside `AppLayout`; the focused round-entry and round-summary flows
 are top-level full-screen routes (no bottom tabs) to maximize on-course space.
 
-**Code-splitting:** the peripheral routes (course-search flow, settings, rounds
-history, and stats) are `React.lazy`-loaded via the `lazyRoute` helper, which
-wraps each in an `ErrorBoundary` (retry/reload on a failed chunk) + `Suspense`.
-`StatsPage` in particular keeps Recharts off the core flow. The **core on-course
-routes — `HomePage`, `RoundEntryPage`, `RoundSummaryPage` — stay eager in the
-entry chunk on purpose**: they must work offline from a cold first launch (before
-the SW controls the page), so they can't hang on a chunk fetch. Don't lazy-load
-them.
+**Code-splitting:** the round-start flow (course search / setup / manual) and the
+peripheral routes (rounds history, settings, stats) are `React.lazy`-loaded via
+the `lazyRoute(id, element)` helper, which wraps each in a **per-route-keyed**
+`ErrorBoundary` (reload on a failed chunk) + `Suspense`. The key matters: React
+Router renders route elements into the Outlet unkeyed, so without it a failed
+chunk on one route would leave the error screen stuck on the next. `StatsPage` in
+particular keeps Recharts off the core flow. The round-start flow supports offline
+(cached-course search, network-free manual entry), but reaching it offline
+requires a prior online session — which is also when the SW precaches its chunks —
+so the first-session chunk-fetch risk is bounded. The **core on-course routes —
+`HomePage`, `RoundEntryPage`, `RoundSummaryPage` — stay eager in the entry chunk
+on purpose**: they must work offline from a cold first launch (before the SW
+controls the page), so they can't hang on a chunk fetch. Don't lazy-load them.
 
 ## Reference docs
 
