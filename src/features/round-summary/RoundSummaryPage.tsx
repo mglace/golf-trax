@@ -47,11 +47,19 @@ export function RoundSummaryPage() {
   // while the dismissal guard applies only while a redirect might still land (so
   // only `in-flight` suppresses).
   const signInStateRef = useRef<'none' | 'in-flight' | 'failed'>('none')
-  // Latches the permanent opt-out. Unlike "Not now", that path awaits a Dexie
-  // write before it clears state, so the button stays live and mounted across
-  // the await — and a double-tap would report the opt-out twice, inflating the
-  // one metric meant to reveal that this prompt is unwelcome.
+  // Whether the permanent opt-out is in flight. Unlike "Not now", that path
+  // awaits a Dexie write before it clears state, so the button stays live and
+  // mounted across the await — and a double-tap would run the handler twice.
+  // It also records the user's *intent* for the whole of that window: Escape or
+  // the backdrop landing mid-write is still a permanent decline, because that's
+  // the button they pressed.
   const dismissingRef = useRef(false)
+  // Whether this prompt has already reported a dismissal. `dismissingRef` only
+  // guards re-entry into the opt-out handler; Escape and the backdrop stay live
+  // across its await and reach `dismissCloudPrompt` directly, so without this a
+  // single prompt could emit two `cloud_prompt_dismissed` events — the exact
+  // inflation the opt-out latch exists to prevent.
+  const dismissedRef = useRef(false)
 
   const [loaded, setLoaded] = useState(false)
   useEffect(() => {
@@ -145,6 +153,7 @@ export function RoundSummaryPage() {
         trackEvent('cloud_prompt_shown', { rounds_saved: completedCount })
         signInStateRef.current = 'none'
         dismissingRef.current = false
+        dismissedRef.current = false
         setCloudPrompt({ count: completedCount, repeat: isRepeatCloudPrompt(prefs) })
         setSaving(false)
         return
@@ -168,7 +177,13 @@ export function RoundSummaryPage() {
   // already reported, which would count one prompt as both a conversion and a
   // decline; CLAUDE.md says this funnel is what the cadence gets tuned on, so
   // suppress the decline rather than the exit.
-  function dismissCloudPrompt(permanent = false) {
+  // The default reads the intent latch rather than `false`, so an Escape or
+  // backdrop tap that lands while the opt-out is mid-write still reports as
+  // permanent — the user did press "Don't ask again"; another exit merely won
+  // the race to run.
+  function dismissCloudPrompt(permanent = dismissingRef.current) {
+    if (dismissedRef.current) return
+    dismissedRef.current = true
     if (signInStateRef.current !== 'in-flight') {
       trackEvent('cloud_prompt_dismissed', {
         rounds_saved: cloudPrompt?.count ?? 0,

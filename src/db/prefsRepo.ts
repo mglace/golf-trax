@@ -59,12 +59,12 @@ export async function setPendingSignIn(pending: boolean): Promise<void> {
 /**
  * Clear the flag, best-effort — **never rejects**.
  *
- * Every caller is presentational cleanup with nowhere to report a failure: a
- * React effect teardown (whose rejection would have no owner at all), a dismiss
- * button, and the failed-sign-in path, which is already handling one error. The
- * flag only drives a one-time banner, so a lost write costs nothing worth
- * propagating — and `void setPendingSignIn(false)` at those sites would discard
- * the value while leaving the rejection unhandled.
+ * Both callers are presentational, with nowhere to report a failure: the banner
+ * clearing the flag as it appears (`features/home/SignedInBanner.tsx`), and the
+ * failed-sign-in path, which is already handling one error. The flag only drives
+ * a one-time banner, so a lost write costs nothing worth propagating — and
+ * `void setPendingSignIn(false)` at those sites would discard the value while
+ * leaving the rejection unhandled.
  */
 export async function clearPendingSignIn(): Promise<void> {
   try {
