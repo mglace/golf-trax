@@ -48,11 +48,60 @@ first few rounds, which the sample sidesteps.
 `round-card.html` asserts the footer sits inside the frame rather than trusting
 the layout. Any future change to the card's height or content needs that check.
 
+## Rasterizer spike — result: viable, with caveats
+
+`api/src/share-card.js` renders the same card as pure SVG on the server, and
+`@resvg/resvg-js` rasterizes it to PNG. `round-card-server.png` and
+`round-card-server-degraded.png` are its output. This existed to answer one
+question — can the OG image be produced in the Functions app at all — and the
+answer is yes.
+
+Measured on Node 22 / linux-x64:
+
+| | |
+|---|---|
+| Render (1080×1350 PNG) | 380–520 ms cold, ~540 KB |
+| `@resvg/resvg-js` on disk | 4.3 MB (native `.node` binary) |
+| Bundled fonts | ~810 KB for Liberation Sans regular + bold |
+
+**Fonts must be bundled.** With `loadSystemFonts: false` and no `fontFiles`,
+resvg renders a 485-byte image — every glyph silently disappears, no error. A
+Functions host is not guaranteed to have fonts installed, so the TTFs ship with
+the deployment and `defaultFontFamily` is set explicitly. A consequence worth
+accepting deliberately: the OG image's typography is frozen to the bundled face
+and will not match the app's `system-ui` stack.
+
+**Text width is estimated, not measured.** resvg exposes no metrics API, so
+`estWidth` guesses from an average per-character advance. It is good enough to
+decide whether a course name shrinks or truncates, and not good enough for
+layout — the scoring legend originally collided its counts into its labels and
+now uses fixed columns instead. Anything that positions one element from
+another's text width is fragile; use fixed columns or `text-anchor` instead.
+
+**Not verified:** that the native binary loads on Azure SWA managed functions.
+That cannot be tested from a dev container — it needs a deploy to a preview
+environment, and it should be the first thing tried, since everything else in
+Phase 1 depends on it. If it fails, the fallback is a separate Function App or
+an external image endpoint, not client-uploaded PNGs (see below).
+
+**Rejected: having the client upload its rendered PNG.** It removes the native
+dependency, but means accepting arbitrary image bytes from an unauthenticated
+endpoint and serving them from the app's own domain. The share payload stays
+numbers-only; the server is the only thing that ever draws a card.
+
 ## Known gaps
 
-- Sample data only; the strip assumes 18 holes and clamps bars at ±2 strokes.
-- No 9-hole layout, and no 9:16 story crop (the other high-traffic placement).
-- Fonts render as whatever the screenshotting machine has. In the app this
-  inherits the Tailwind `system-ui` stack.
-- Fairways/GIR/putts are shown unconditionally; real rounds often have these
-  untracked and the card needs a graceful degradation for that.
+- **Vertical space is not distributed.** The layout flows top-down with the CTA
+  pinned to the bottom, so a 9-hole round with untracked stats leaves a ~200px
+  void above the footer — visible in `round-card-server-degraded.png`. The card
+  needs to either grow/shrink its own height or distribute slack between
+  sections.
+- `round-card.html` (the browser prototype) still assumes 18 holes and shows all
+  three stat tiles unconditionally. The server port handles both; the prototype
+  was not back-ported since the server render is the one that ships.
+- No 9:16 story crop yet — the other high-traffic placement.
+- Bars clamp at ±2 strokes. Deliberate: an unclamped blow-up would rescale the
+  strip and flatten every other hole, but it does mean a 9 on a par 4 reads the
+  same as a 6.
+- `buildModel` in `share-card.js` duplicates scoring logic that belongs in a
+  pure `src/domain/shareCard.ts`, with this as its parity-tested JS port.
