@@ -19,11 +19,13 @@
   "routes": [
     {
       "route": "/assets/*",
-      "headers": { "cache-control": "public, max-age=31536000, immutable" }
+      "headers": {
+        "cache-control": "public, max-age=31536000, immutable"
+      }
     },
     {
       "route": "/r/*",
-      "rewrite": "/api/share-probe"
+      "rewrite": "/api/share-page"
     }
   ]
 }
