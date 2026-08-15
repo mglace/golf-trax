@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>GolfTrax share card</title>
+<style>
+  /* Render surface only — not app CSS. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #202225;
+    font-family: 'Liberation Sans', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 40px; padding: 40px;
+  }
+
+  .card {
+    /* ---- palette (validated: node validate_palette.js "#34d399,#94a3b8,#fbbf24,#f43f5e"
+         --mode dark --surface #0e2a1a --pairs all) ---- */
+    --birdie:  #34d399;   /* under par        */
+    --par:     #94a3b8;   /* even — diverging neutral, intentionally low-chroma */
+    --bogey:   #fbbf24;   /* +1               */
+    --double:  #f43f5e;   /* +2 or worse      */
+
+    --surface-0: #071b12;
+    --surface-1: rgba(255,255,255,0.045);
+    --hairline:  rgba(255,255,255,0.10);
+    --ink-1: #ffffff;
+    --ink-2: #a9c6b6;
+    --ink-3: #6d8b7b;
+
+    position: relative;
+    width: 1080px;
+    overflow: hidden;
+    color: var(--ink-1);
+    background:
+      radial-gradient(120% 80% at 12% -10%, #16613a 0%, rgba(22,97,58,0) 62%),
+      radial-gradient(90% 60% at 105% 8%, #0f7a56 0%, rgba(15,122,86,0) 58%),
+      linear-gradient(168deg, #0d2e1e 0%, #071b12 55%, #050f0b 100%);
+  }
+  .card.feed  { height: 1350px; }
+  .card.story { height: 1920px; }
+
+  /* Contour texture — evokes a course map, stays under the ink. */
+  .contours { position: absolute; inset: 0; opacity: 0.07; pointer-events: none; }
+
+  .inner { position: relative; height: 100%; display: flex; flex-direction: column; padding: 48px 64px 0; }
+
+  /* ---------- header ---------- */
+  .head { display: flex; align-items: center; justify-content: space-between; }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .wordmark { font-size: 25px; font-weight: 700; letter-spacing: 0.20em; color: var(--ink-1); }
+  .datestamp { font-size: 22px; color: var(--ink-2); letter-spacing: 0.03em; }
+
+  /* ---------- course ---------- */
+  .course { margin-top: 34px; }
+  .course h1 { font-size: 62px; font-weight: 700; line-height: 1.03; letter-spacing: -0.022em; }
+  .course p { margin-top: 14px; font-size: 24px; color: var(--ink-2); letter-spacing: 0.01em; }
+
+  /* ---------- hero ---------- */
+  .badge {
+    margin-top: 22px; display: inline-flex; align-items: center; gap: 12px; align-self: flex-start;
+    padding: 12px 20px 12px 16px; border-radius: 999px;
+    background: rgba(52,211,153,0.13); border: 1px solid rgba(52,211,153,0.34);
+    font-size: 21px; font-weight: 600; color: var(--birdie); letter-spacing: 0.01em;
+  }
+  .hero { margin-top: 20px; display: flex; align-items: flex-end; gap: 44px; }
+  .hero-figure { font-size: 194px; font-weight: 700; line-height: 0.82; letter-spacing: -0.05em; }
+  .hero-side { display: flex; gap: 40px; padding-bottom: 22px; }
+  .hero-cell { border-left: 2px solid var(--hairline); padding-left: 24px; }
+  .hero-cell .v { font-size: 54px; font-weight: 700; line-height: 1; letter-spacing: -0.02em; }
+  .hero-cell .k { margin-top: 10px; font-size: 18px; font-weight: 600; letter-spacing: 0.13em; color: var(--ink-3); }
+  .over { color: var(--bogey); }
+
+  /* ---------- section scaffolding ---------- */
+  .sec { margin-top: 30px; }
+  .sec-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 18px; }
+  .sec-title { font-size: 19px; font-weight: 700; letter-spacing: 0.15em; color: var(--ink-3); }
+  .sec-cap { margin-top: 8px; font-size: 18px; letter-spacing: 0.01em; color: var(--ink-3); font-weight: 400; }
+  .sec-note { font-size: 21px; color: var(--ink-2); letter-spacing: 0.01em; }
+  .sec-note b { color: var(--ink-1); font-weight: 700; }
+  .sec-note .sep { color: var(--ink-3); margin: 0 12px; }
+
+  /* ---------- KPI tiles ---------- */
+  .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .kpi { background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 22px; padding: 26px 28px; }
+  .kpi .k { font-size: 18px; font-weight: 600; letter-spacing: 0.13em; color: var(--ink-3); }
+  .kpi .v { margin-top: 12px; font-size: 56px; font-weight: 700; line-height: 1; letter-spacing: -0.02em; }
+  .kpi .s { margin-top: 10px; font-size: 20px; color: var(--ink-2); }
+
+  /* ---------- distribution ---------- */
+  .legend { display: flex; gap: 34px; margin-top: 16px; }
+  .lg { display: flex; align-items: center; gap: 11px; font-size: 21px; color: var(--ink-2); }
+  .lg i { width: 14px; height: 14px; border-radius: 4px; display: block; }
+  .lg b { color: var(--ink-1); font-weight: 700; }
+
+  /* ---------- footer CTA ---------- */
+  .cta {
+    margin-top: auto; margin-left: -64px; margin-right: -64px;
+    padding: 34px 64px 38px;
+    border-top: 1px solid var(--hairline);
+    background: linear-gradient(180deg, rgba(52,211,153,0.05), rgba(52,211,153,0.11));
+    display: flex; align-items: center; justify-content: space-between; gap: 32px;
+  }
+  .cta-l { display: flex; align-items: center; gap: 22px; }
+  .cta h2 { font-size: 32px; font-weight: 700; letter-spacing: -0.015em; }
+  .cta p { margin-top: 8px; font-size: 21px; color: var(--ink-2); }
+  .cta-url {
+    padding: 16px 26px; border-radius: 999px; background: var(--birdie); color: #052e1e;
+    font-size: 25px; font-weight: 700; letter-spacing: 0.005em; white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+  <div class="card feed"  id="card-feed"></div>
+
+<script>
+/* ------------------------------------------------------------------ data -- */
+const round = {
+  course: 'Pine Ridge Golf Club',
+  place: 'Coventry, RI',
+  tee: 'White tees',
+  date: 'Sat, Aug 15',
+  pars:   [4,5,3,4,4,3,5,4,4, 4,3,5,4,4,3,4,5,4],
+  scores: [5,6,3,4,5,4,6,5,4, 4,2,6,5,4,4,6,4,5],
+  fairways: { hit: 8,  opp: 14 },
+  gir:      { hit: 5,  opp: 18 },
+  putts:    { total: 32, avg: '1.8' },
+  badgeText: '4 better than your 10-round average',
+}
+
+const TONES = {
+  birdie: { color: 'var(--birdie)', label: 'Birdie+' },
+  par:    { color: 'var(--par)',    label: 'Par'     },
+  bogey:  { color: 'var(--bogey)',  label: 'Bogey'   },
+  double: { color: 'var(--double)', label: 'Double+' },
+}
+const toneOf = (d) => (d <= -1 ? 'birdie' : d === 0 ? 'par' : d === 1 ? 'bogey' : 'double')
+
+const sum = (a) => a.reduce((x, y) => x + y, 0)
+const totalPar   = sum(round.pars)
+const totalScore = sum(round.scores)
+const vsPar      = totalScore - totalPar
+const outScore = sum(round.scores.slice(0, 9)), outPar = sum(round.pars.slice(0, 9))
+const inScore  = sum(round.scores.slice(9)),    inPar  = sum(round.pars.slice(9))
+const signed = (n) => (n > 0 ? '+' + n : n === 0 ? 'E' : String(n))
+
+const counts = { birdie: 0, par: 0, bogey: 0, double: 0 }
+round.scores.forEach((s, i) => { counts[toneOf(s - round.pars[i])] += 1 })
+
+/* ------------------------------------------------------------- fragments -- */
+const mark = (size) => `
+  <svg width="${size}" height="${size}" viewBox="0 0 512 512" aria-hidden="true">
+    <rect width="512" height="512" rx="112" fill="#34d399"/>
+    <rect x="238" y="96" width="18" height="300" rx="9" fill="#052e1e"/>
+    <path d="M256 104 L404 164 L256 224 Z" fill="#052e1e"/>
+    <rect x="128" y="384" width="256" height="18" rx="9" fill="#052e1e"/>
+  </svg>`
+
+const contours = `
+  <svg class="contours" viewBox="0 0 1080 1350" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <g fill="none" stroke="#7cf3c0" stroke-width="2">
+      ${[0, 1, 2, 3, 4, 5, 6, 7].map((i) => {
+        const o = i * 46
+        return `<path d="M${-120 + o} 1400 C ${180 + o} ${1120 - o * 0.6}, ${120 + o} ${640 - o * 0.5}, ${520 + o} ${380 - o * 0.7}
+                          S ${900 + o} ${140 - o * 0.4}, ${1240 + o} ${-80 - o * 0.3}" opacity="${0.55 - i * 0.05}"/>`
+      }).join('')}
+    </g>
+  </svg>`
+
+/**
+ * Hole-by-hole diverging strip: bars grow up from the par baseline for under
+ * par, down for over. Score sits in a fixed row above, hole number in a fixed
+ * row below, so identity is never carried by color alone.
+ */
+function strip(W) {
+  const n = 18
+  const barW = 34, seam = 16
+  const gap = (W - n * barW - seam) / (n - 1)
+  const scoreY = 34, parY = 64, base = 134, unit = 36, holeY = 240, H = 254
+
+  const x = (i) => i * (barW + gap) + (i >= 9 ? seam : 0)
+
+  let bars = '', labels = ''
+  round.scores.forEach((s, i) => {
+    const d = s - round.pars[i]
+    const t = toneOf(d)
+    const c = TONES[t].color
+    const cx = x(i)
+
+    if (d === 0) {
+      bars += `<rect x="${cx}" y="${base - 5}" width="${barW}" height="10" rx="5" fill="${c}"/>`
+    } else if (d < 0) {
+      const h = Math.min(-d, 2) * unit
+      bars += `<rect x="${cx}" y="${base - h}" width="${barW}" height="${h}" rx="6" fill="${c}"/>`
+    } else {
+      const h = Math.min(d, 2) * unit
+      bars += `<rect x="${cx}" y="${base}" width="${barW}" height="${h}" rx="6" fill="${c}"/>`
+    }
+
+    labels += `
+      <text x="${cx + barW / 2}" y="${scoreY}" text-anchor="middle" font-size="31" font-weight="700" fill="${c}">${s}</text>
+      <text x="${cx + barW / 2}" y="${parY}" text-anchor="middle" font-size="17" fill="#6d8b7b">${round.pars[i]}</text>
+      <text x="${cx + barW / 2}" y="${holeY}" text-anchor="middle" font-size="19" fill="#6d8b7b">${i + 1}</text>`
+  })
+
+  const seamX = x(9) - gap / 2 - seam / 2
+  return `
+    <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img"
+         aria-label="Strokes relative to par for each of 18 holes.">
+      <line x1="0" y1="${base}" x2="${W}" y2="${base}" stroke="rgba(255,255,255,0.20)" stroke-width="2"/>
+      <line x1="${seamX}" y1="${parY + 14}" x2="${seamX}" y2="${holeY - 18}" stroke="rgba(255,255,255,0.10)" stroke-width="2"/>
+      ${bars}${labels}
+    </svg>`
+}
+
+/** Part-to-whole: how the 18 holes broke down. 2px gaps between segments. */
+function distribution(W) {
+  const order = ['birdie', 'par', 'bogey', 'double']
+  const H = 30, g = 3
+  let cx = 0, segs = ''
+  order.forEach((t) => {
+    const w = (counts[t] / 18) * (W - g * (order.length - 1))
+    segs += `<rect x="${cx}" y="0" width="${w}" height="${H}" rx="9" fill="${TONES[t].color}"/>`
+    if (w > 90) {
+      segs += `<text x="${cx + w / 2}" y="${H / 2 + 7}" text-anchor="middle" font-size="19" font-weight="700" fill="#052e1e">${counts[t]}</text>`
+    }
+    cx += w + g
+  })
+  const legend = order.map((t) =>
+    `<span class="lg"><i style="background:${TONES[t].color}"></i>${TONES[t].label} <b>${counts[t]}</b></span>`).join('')
+  return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img"
+            aria-label="Scoring breakdown: ${order.map((t) => counts[t] + ' ' + TONES[t].label).join(', ')}.">${segs}</svg>
+          <div class="legend">${legend}</div>`
+}
+
+/* ------------------------------------------------------------------ card -- */
+function card(W) {
+  const pct = (a, b) => Math.round((a / b) * 100) + '%'
+  return `
+  ${contours}
+  <div class="inner">
+    <div class="head">
+      <div class="brand">${mark(46)}<span class="wordmark">GOLFTRAX</span></div>
+      <div class="datestamp">${round.date}</div>
+    </div>
+
+    <div class="course">
+      <h1>${round.course}</h1>
+      <p>${round.place} &nbsp;·&nbsp; ${round.tee} &nbsp;·&nbsp; 18 holes</p>
+    </div>
+
+    <div class="badge"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 L21 19 H3 Z" fill="currentColor"/></svg>${round.badgeText}</div>
+
+    <div class="hero">
+      <div class="hero-figure">${totalScore}</div>
+      <div class="hero-side">
+        <div class="hero-cell"><div class="v over">${signed(vsPar)}</div><div class="k">TO PAR</div></div>
+        <div class="hero-cell"><div class="v">${totalPar}</div><div class="k">COURSE PAR</div></div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head">
+        <div><div class="sec-title">HOLE BY HOLE</div><div class="sec-cap">score over par &nbsp;·&nbsp; bars show strokes vs par</div></div>
+        <div class="sec-note">OUT <b>${outScore}</b> ${signed(outScore - outPar)}<span class="sep">|</span>IN <b>${inScore}</b> ${signed(inScore - inPar)}</div>
+      </div>
+      ${strip(W - 128)}
+    </div>
+
+    <div class="sec">
+      <div class="kpis">
+        <div class="kpi"><div class="k">FAIRWAYS</div><div class="v">${pct(round.fairways.hit, round.fairways.opp)}</div><div class="s">${round.fairways.hit} of ${round.fairways.opp}</div></div>
+        <div class="kpi"><div class="k">GREENS IN REG</div><div class="v">${pct(round.gir.hit, round.gir.opp)}</div><div class="s">${round.gir.hit} of ${round.gir.opp}</div></div>
+        <div class="kpi"><div class="k">PUTTS / HOLE</div><div class="v">${round.putts.avg}</div><div class="s">${round.putts.total} total</div></div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><div class="sec-title">SCORING</div></div>
+      ${distribution(W - 128)}
+    </div>
+
+    <div class="cta">
+      <div class="cta-l">
+        ${mark(62)}
+        <div>
+          <h2>Track your rounds. Free.</h2>
+          <p>Works offline on the course. No account needed.</p>
+        </div>
+      </div>
+      <div class="cta-url">golftrax.app</div>
+    </div>
+  </div>`
+}
+
+document.getElementById('card-feed').innerHTML  = card(1080)
+</script>
+</body>
+</html>
