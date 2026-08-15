@@ -306,10 +306,35 @@ function renderShareSvg(model) {
 }
 
 /**
- * Derive the card model from a stored share snapshot.
+ * Format the round's ISO date for display.
  *
- * TEMPORARY: this logic belongs in `src/domain/shareCard.ts` so the in-app
- * preview and the OG image cannot disagree. See the file header.
+ * The client sends an ISO timestamp rather than a display string: on an
+ * anonymous endpoint a client-supplied display string would be unvalidatable
+ * free text printed straight onto an image served from our domain.
+ *
+ * Fixed to en-US/UTC deliberately — the renderer runs on a server with no idea
+ * of the viewer's locale, and the card is a shared image, so it must look the
+ * same to everyone who sees it, not to whoever's machine drew it.
+ */
+function formatCardDate(iso) {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  }).format(d)
+}
+
+/**
+ * Derive the render model from a share snapshot.
+ *
+ * This is the ONLY place a card is turned into pixels — the app shows the
+ * server-rendered image rather than drawing its own preview, so the in-app
+ * preview and the social preview cannot disagree by construction. (An earlier
+ * plan had a client renderer kept in lockstep by a parity test; one renderer is
+ * strictly better than two that agree.)
  */
 function buildModel(snapshot) {
   const { pars, scores } = snapshot
@@ -355,7 +380,9 @@ function buildModel(snapshot) {
   return {
     course: snapshot.course,
     subtitle: [snapshot.place, snapshot.tee, `${pars.length} holes`].filter(Boolean).join('  ·  '),
-    dateLabel: snapshot.dateLabel,
+    // Accepts a pre-formatted label only so the existing probe/sample fixtures
+    // keep working; real requests carry `date` and are formatted here.
+    dateLabel: snapshot.dateLabel || formatCardDate(snapshot.date),
     pars,
     scores,
     holeNumbers: snapshot.holeNumbers || pars.map((_, i) => i + 1),
@@ -369,4 +396,4 @@ function buildModel(snapshot) {
   }
 }
 
-module.exports = { renderShareSvg, buildModel, TONE }
+module.exports = { renderShareSvg, buildModel, formatCardDate, TONE }
