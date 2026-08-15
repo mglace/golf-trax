@@ -11,6 +11,7 @@
  */
 import { useEffect, useState, type FormEvent } from 'react'
 import { useDialogFocus } from '@/components/useDialogFocus'
+import { useOnlineStatus } from '@/hooks/useOnlineStatus'
 
 /**
  * Deliberately permissive: something@something.tld, no spaces. Auth0 is the real
@@ -43,6 +44,7 @@ export function CloudPromptModal({
   onDismissForever,
 }: CloudPromptModalProps) {
   const dialogRef = useDialogFocus<HTMLDivElement>()
+  const online = useOnlineStatus()
   const [email, setEmail] = useState('')
   const [error, setError] = useState<string>()
   // Latched for the duration of the hand-off to stop a second tap. On success
@@ -66,15 +68,30 @@ export function CloudPromptModal({
       setError('Enter a valid email address.')
       return
     }
+    // Checked up front rather than left to the catch below, because the catch
+    // can't cover it: `loginWithRedirect` builds the authorize URL locally
+    // (state/nonce/PKCE via WebCrypto, no request) and then navigates, so it
+    // resolves happily while offline and the browser leaves the app for a page
+    // it can't load. Since this prompt fires the moment a round is saved —
+    // frequently out on a course — that's the likeliest way to reach it.
+    //
+    // `navigator.onLine` is only trustworthy in the negative (it can report
+    // online with no route to anywhere), which is exactly how it's used here:
+    // to refuse a hand-off we know will strand the user, never to promise one
+    // will work.
+    if (!online) {
+      setError('You’re offline. Reconnect and try again — your round is saved either way.')
+      return
+    }
     setError(undefined)
     setSubmitting(true)
     try {
       await onSubmit(trimmed)
     } catch {
-      // The redirect never started — likely offline, which is common here since
-      // the prompt fires the moment a round is saved, often out on a course.
+      // A genuine SDK or crypto failure before the redirect — rare, and distinct
+      // from the offline case handled above.
       setSubmitting(false)
-      setError('Couldn’t start sign-in. Check your connection and try again.')
+      setError('Couldn’t start sign-in. Please try again.')
     }
   }
 

@@ -93,6 +93,25 @@ test.describe('Cloud prompt after saving a round', () => {
     await expect(page.getByRole('dialog')).toBeVisible()
   })
 
+  test('refuses the hand-off while offline instead of navigating away', async ({
+    page,
+    context,
+  }) => {
+    await playAndSaveRound(page)
+    await page.getByLabel('Email address').fill('golfer@example.com')
+
+    // The SDK builds the authorize URL locally and navigates, so offline it
+    // would succeed into a page the browser can't load — taking the user out of
+    // the app. The guard has to be up front; a catch can't reach this.
+    await context.setOffline(true)
+    await page.getByRole('button', { name: 'Continue' }).click()
+
+    await expect(page.getByRole('alert')).toHaveText(/You’re offline\./)
+    // Still in the app, still on the prompt, and able to retry.
+    await expect(page.getByRole('dialog')).toBeVisible()
+    await expect(page).not.toHaveURL(new RegExp(AUTH0_TEST_DOMAIN))
+  })
+
   test('hands a valid email to Auth0 as a login hint', async ({ page }) => {
     await playAndSaveRound(page)
 

@@ -12,7 +12,7 @@
  * the flag — or never returning to spend it, e.g. abandoning Auth0's screen
  * without entering the emailed code — costs nothing but this message.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useAuth } from '@/auth/authContext'
 import { getCloudPromptPrefs, clearPendingSignIn } from '@/db/prefsRepo'
@@ -54,13 +54,21 @@ export function SignedInBanner() {
   //    flag was being cleared the moment the banner first rendered. Clearing on
   //    appearance behaves identically under both, and a crash before unmount no
   //    longer leaves the flag set.
+  // The latch is a one-shot ref, deliberately *not* `shown` itself. Using the
+  // visible state as its own guard means dismissing re-runs this effect with
+  // nothing set, and `ready` is still true until the persisted clear round-trips
+  // back through the live query — so the X button would re-summon the banner it
+  // just closed, and permanently so if that write failed (the clear swallows
+  // errors and never retries, leaving `pending` true forever).
+  const spentRef = useRef(false)
   const [shown, setShown] = useState<{ count: number } | null>(null)
 
   useEffect(() => {
-    if (!ready || shown) return
+    if (!ready || spentRef.current) return
+    spentRef.current = true
     setShown({ count: roundCount })
     void clearPendingSignIn()
-  }, [ready, shown, roundCount])
+  }, [ready, roundCount])
 
   // Drop it if the session ends underneath us — a stale "you're signed in"
   // banner is worse than none.
