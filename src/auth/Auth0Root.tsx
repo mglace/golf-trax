@@ -1,11 +1,13 @@
 /**
  * The Auth0-backed auth bridge, mounted ONLY for sync-enabled builds and loaded
- * via a dynamic import from `main.tsx` (PHASE2.md §10 — don't regress the
- * local-only experience: a local-only build never downloads the Auth0 SDK).
+ * via a dynamic import from `src/AppRoot.tsx` (PHASE2.md §10 — don't regress the
+ * local-only experience: a local-only build never *executes* the Auth0 SDK; the
+ * chunk is still emitted, but the bridge is only rendered when `syncConfig` is
+ * set).
  *
  * It adapts `@auth0/auth0-react` into the app's uniform {@link AuthValue}
  * (see `./authContext`) and **reports** it upward via `onValue` rather than
- * wrapping the app. This lets `main.tsx` render the router — and paint the
+ * wrapping the app. This lets `AppRoot` render the router — and paint the
  * first screen — immediately, while this heavy SDK chunk (mostly unused on the
  * first paint) loads in a sibling subtree. Once loaded, it pushes the live auth
  * value up to the always-mounted `AuthContext.Provider`, so the router never

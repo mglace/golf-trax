@@ -7,6 +7,7 @@ import { RoundSummaryPage } from '@/features/round-summary/RoundSummaryPage'
 import { LazyFallback } from '@/components/LazyFallback'
 import { LazyRouteError } from '@/components/LazyRouteError'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { isChunkLoadError } from '@/components/isChunkLoadError'
 
 // Code-split the round-start + peripheral routes so their code doesn't bloat the
 // entry chunk (it was ~55% of it, unused on `/`). The service worker precaches
@@ -57,14 +58,19 @@ const StatsPage = lazy(() =>
  * Wrap a lazily-loaded route element in a per-route-keyed error boundary +
  * Suspense. The `id` key gives each route its own boundary instance: React
  * Router renders route elements into `AppLayout`'s `<Outlet/>` without a key, so
- * without this the boundary (and its `hasError` state) would be reused across
+ * without this the boundary (and its error state) would be reused across
  * sibling lazy routes — a failed chunk on one would leave the error screen stuck
  * when navigating to a healthy one. Keying per route makes each navigation mount
  * a fresh boundary.
+ *
+ * `shouldCatch={isChunkLoadError}` scopes the reload prompt to a failed chunk
+ * *fetch* (the offline-before-precache case it's for). A genuine render bug in
+ * the loaded page is re-thrown to the router's own error boundary rather than
+ * mislabeled a connection problem behind a reload that just recurs.
  */
 function lazyRoute(id: string, element: ReactElement): ReactElement {
   return (
-    <ErrorBoundary key={id} fallback={<LazyRouteError />}>
+    <ErrorBoundary key={id} fallback={<LazyRouteError />} shouldCatch={isChunkLoadError}>
       <Suspense fallback={<LazyFallback />}>{element}</Suspense>
     </ErrorBoundary>
   )
