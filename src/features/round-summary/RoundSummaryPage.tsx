@@ -230,7 +230,13 @@ export function RoundSummaryPage() {
     // a genuine decline and `dismissCloudPrompt` should have reported it as one.
     // Latching earlier would suppress that decline and leave the prompt with no
     // terminal event at all.
-    if (dismissedRef.current) return
+    if (dismissedRef.current) {
+      // Undo the write above for the same reason the rejection path below does:
+      // no redirect happened, so leaving the flag set would greet a later,
+      // unrelated Settings sign-in with the post-save banner.
+      void clearPendingSignIn()
+      return
+    }
     // Once per prompt, not once per attempt: after a failed hand-off the user can
     // retry from the modal, and re-reporting would let one prompt's redirect rate
     // exceed its own impression. The event necessarily counts an attempt rather

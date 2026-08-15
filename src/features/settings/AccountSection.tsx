@@ -9,6 +9,7 @@
  */
 import { useState } from 'react'
 import { useAuth } from '@/auth/authContext'
+import { useOnlineStatus } from '@/hooks/useOnlineStatus'
 import { useSyncStore, type SyncStatus } from '@/sync/syncStore'
 import { clearAccountRounds } from '@/sync/syncClient'
 import { SpinnerIcon } from '@/components/icons'
@@ -41,22 +42,29 @@ function StatusLine() {
 export function AccountSection() {
   const { isConfigured, isLoading, isAuthenticated, email, login, logout } = useAuth()
   const [signInError, setSignInError] = useState<string>()
+  const online = useOnlineStatus()
 
   // Local-only build: no account surface at all.
   if (!isConfigured) return null
 
-  // `login` rejects when the hand-off fails before the browser navigates (see
-  // {@link AuthValue.login}). Floating that promise would leave an unhandled
-  // rejection and — worse for the user — make this button appear to do nothing,
-  // with being offline the likeliest cause on an app used out on a course. The
-  // post-save cloud prompt reports the same failure inline; this keeps both
-  // sign-in entry points honest about it.
+  // Mirrors the post-save prompt's hand-off handling, so both sign-in entry
+  // points fail the same way.
+  //
+  // Offline is checked up front because the catch can't see it: `login` builds
+  // the authorize URL locally and navigates, so with no connection it resolves
+  // and the browser leaves the app for a page it can't load. The catch stays for
+  // genuine SDK failures, where floating the promise would leave an unhandled
+  // rejection and make this button appear to do nothing.
   async function handleSignIn() {
     setSignInError(undefined)
+    if (!online) {
+      setSignInError('You’re offline. Reconnect and try again — your rounds are safe on this device.')
+      return
+    }
     try {
       await login()
     } catch {
-      setSignInError('Couldn’t start sign-in. Check your connection and try again.')
+      setSignInError('Couldn’t start sign-in. Please try again.')
     }
   }
 

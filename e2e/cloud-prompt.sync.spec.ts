@@ -131,3 +131,28 @@ test.describe('Cloud prompt after saving a round', () => {
     expect(url.searchParams.get('connection')).toBe('email')
   })
 })
+
+/**
+ * The other way in. Settings is the permanent entry point, so its hand-off has
+ * to fail the same way the prompt's does — the offline guard in particular,
+ * since a rejection-only catch can't see that case.
+ */
+test.describe('Settings sign-in', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubAuth0(page)
+  })
+
+  test('refuses the hand-off while offline instead of navigating away', async ({
+    page,
+    context,
+  }) => {
+    await page.goto('/settings')
+    await expect(page.getByRole('heading', { name: 'Account & sync' })).toBeVisible()
+
+    await context.setOffline(true)
+    await page.getByRole('button', { name: 'Sign in to sync' }).click()
+
+    await expect(page.getByRole('alert')).toHaveText(/You’re offline\./)
+    await expect(page).not.toHaveURL(new RegExp(AUTH0_TEST_DOMAIN))
+  })
+})
