@@ -19,7 +19,7 @@ test.describe('Lazy route error boundary', () => {
     await page.goto('/')
     await page.getByRole('link', { name: 'Stats' }).click()
 
-    // The boundary catches the failed import and offers a reload.
+    // The boundary catches the failed import and offers recovery.
     await expect(page.getByText(/This screen/)).toBeVisible()
     await expect(page.getByRole('button', { name: 'Reload' })).toBeVisible()
 
@@ -27,6 +27,23 @@ test.describe('Lazy route error boundary', () => {
     // across routes (regression guard for the keyless-boundary reuse bug).
     await page.getByRole('link', { name: 'Rounds' }).click()
     await expect(page).toHaveURL(/\/rounds$/)
+    await expect(page.getByText(/This screen/)).toBeHidden()
+  })
+
+  test('the "Go to Home" link recovers client-side without a page reload', async ({
+    page,
+  }) => {
+    await page.route(/features\/stats\/StatsPage/, (route) => route.abort())
+
+    await page.goto('/')
+    await page.getByRole('link', { name: 'Stats' }).click()
+    await expect(page.getByText(/This screen/)).toBeVisible()
+
+    // "Go to Home" is a client-side navigation to the eager HomePage — it must
+    // recover the app in-place (no full document load), which is what makes it
+    // safe in the offline first-session case a full reload would strand.
+    await page.getByRole('link', { name: 'Go to Home' }).click()
+    await expect(page).toHaveURL(/\/$/)
     await expect(page.getByText(/This screen/)).toBeHidden()
   })
 })
