@@ -1,10 +1,25 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { getRound, finalizeRound, updateHoleInRound } from '@/db/roundsRepo'
+import {
+  getRound,
+  finalizeRound,
+  updateHoleInRound,
+  countCompletedRounds,
+} from '@/db/roundsRepo'
+import {
+  getCloudPromptPrefs,
+  recordCloudPromptShown,
+  dismissCloudPromptForever,
+  setPendingSignIn,
+  clearPendingSignIn,
+} from '@/db/prefsRepo'
 import { triggerSync } from '@/sync/controller'
+import { useAuth } from '@/auth/authContext'
 import { trackEvent } from '@/analytics/gtag'
 import { computeTotals, ROUND_LENGTH_LABEL } from '@/domain/round'
+import { shouldPromptForCloud, isRepeatCloudPrompt, canPromptForCloud } from '@/domain/cloudPrompt'
+import { CloudPromptModal } from '@/features/onboarding/CloudPromptModal'
 import { ChevronLeftIcon, SpinnerIcon } from '@/components/icons'
 import { StatsWidget } from './StatsWidget'
 import { Scorecard } from './Scorecard'
@@ -19,8 +34,32 @@ export function RoundSummaryPage() {
   const navigate = useNavigate()
   const { roundId } = useParams<{ roundId: string }>()
   const round = useLiveQuery(() => (roundId ? getRound(roundId) : undefined), [roundId])
+  const { isConfigured, isLoading, isAuthenticated, login } = useAuth()
   const [saving, setSaving] = useState(false)
   const [editIndex, setEditIndex] = useState<number | null>(null)
+  // Non-null while the post-save cloud prompt is up; carries what the copy needs.
+  const [cloudPrompt, setCloudPrompt] = useState<{ count: number; repeat: boolean } | null>(
+    null,
+  )
+  // Where the current prompt's sign-in hand-off has got to. Three states because
+  // two different rules key off it with different lifetimes: analytics must
+  // report at most one attempt per prompt (so `failed` never returns to `none`),
+  // while the dismissal guard applies only while a redirect might still land (so
+  // only `in-flight` suppresses).
+  const signInStateRef = useRef<'none' | 'in-flight' | 'failed'>('none')
+  // Whether the permanent opt-out is in flight. Unlike "Not now", that path
+  // awaits a Dexie write before it clears state, so the button stays live and
+  // mounted across the await — and a double-tap would run the handler twice.
+  // It also records the user's *intent* for the whole of that window: Escape or
+  // the backdrop landing mid-write is still a permanent decline, because that's
+  // the button they pressed.
+  const dismissingRef = useRef(false)
+  // Whether this prompt has already reported a dismissal. `dismissingRef` only
+  // guards re-entry into the opt-out handler; Escape and the backdrop stay live
+  // across its await and reach `dismissCloudPrompt` directly, so without this a
+  // single prompt could emit two `cloud_prompt_dismissed` events — the exact
+  // inflation the opt-out latch exists to prevent.
+  const dismissedRef = useRef(false)
 
   const [loaded, setLoaded] = useState(false)
   useEffect(() => {
@@ -81,7 +120,155 @@ export function RoundSummaryPage() {
     })
     // Best-effort: push the finalized round now if signed in (no-op otherwise).
     triggerSync()
+
+    // Signed out on a sync-enabled build, this is the one moment the app has
+    // something worth keeping to point at — offer the account here rather than
+    // leaving sync discoverable only from Settings. The round is already saved,
+    // so the prompt delays nothing but the navigation.
+    //
+    // Everything here is strictly optional relative to the save, so a Dexie
+    // failure must degrade to the pre-prompt behaviour — plain navigation —
+    // rather than reject out of the handler and strand the user on a summary
+    // screen with `saving` stuck true and the button disabled.
+    //
+    // The auth gate is checked first because `countCompletedRounds()` is not
+    // cheap (it deserializes every completed round — see its doc), and on a
+    // local-only build or for a signed-in user the answer is always no, so
+    // querying first would burn that cost on every save for nothing.
+    try {
+      if (!canPromptForCloud({ isConfigured, isLoading, isAuthenticated })) {
+        navigate('/rounds')
+        return
+      }
+      const [completedCount, prefs] = await Promise.all([
+        countCompletedRounds(),
+        getCloudPromptPrefs(),
+      ])
+      if (
+        shouldPromptForCloud({ isConfigured, isLoading, isAuthenticated, completedCount, prefs })
+      ) {
+        // Record before rendering: a user who force-quits mid-prompt shouldn't be
+        // asked again at the same milestone.
+        await recordCloudPromptShown(completedCount)
+        trackEvent('cloud_prompt_shown', { rounds_saved: completedCount })
+        signInStateRef.current = 'none'
+        dismissingRef.current = false
+        dismissedRef.current = false
+        setCloudPrompt({ count: completedCount, repeat: isRepeatCloudPrompt(prefs) })
+        setSaving(false)
+        return
+      }
+    } catch {
+      /* prompt is optional — fall through to the navigation below */
+    }
+
     navigate('/rounds')
+  }
+
+  // `is_permanent` separates "not now" from "don't ask again" — the opt-out rate
+  // is the signal for whether this prompt is wearing out its welcome, and it's
+  // invisible if both decline paths report identically.
+  //
+  // Escape and the backdrop stay live throughout the sign-in hand-off, so the
+  // modal always has an exit. The cost is that a dismissal can land after
+  // `login()` was called, and by then the redirect may already be committed —
+  // which would count one prompt as both a conversion and a decline. CLAUDE.md
+  // says this funnel is what the cadence gets tuned on, so the decline is
+  // suppressed while a hand-off is `in-flight`, rather than taking the exit away.
+  //
+  // Note the window is short and *not* connection-dependent: `loginWithRedirect`
+  // builds the authorize URL locally and navigates, with no request in between.
+  // That's precisely why being offline can't be caught here and needs its own
+  // up-front guard in `CloudPromptModal`.
+  // The default reads the intent latch rather than `false`, so an Escape or
+  // backdrop tap that lands while the opt-out is mid-write still reports as
+  // permanent — the user did press "Don't ask again"; another exit merely won
+  // the race to run.
+  function dismissCloudPrompt(permanent = dismissingRef.current) {
+    if (dismissedRef.current) return
+    dismissedRef.current = true
+    if (signInStateRef.current !== 'in-flight') {
+      trackEvent('cloud_prompt_dismissed', {
+        rounds_saved: cloudPrompt?.count ?? 0,
+        is_permanent: permanent,
+      })
+    }
+    setCloudPrompt(null)
+    navigate('/rounds')
+  }
+
+  async function handleCloudPromptForever() {
+    if (dismissingRef.current) return
+    dismissingRef.current = true
+    // Suppression is best-effort — if the write fails the next milestone simply
+    // re-asks. What must not fail is the dismissal itself: tapping the permanent
+    // opt-out and having the modal just sit there is the worst outcome for the
+    // one control that exists to stop this prompt.
+    try {
+      await dismissCloudPromptForever()
+    } catch {
+      /* fall through — dismiss regardless */
+    }
+    dismissCloudPrompt(true)
+  }
+
+  async function handleCloudPromptSubmit(email: string) {
+    // Flag the round-trip so Home can confirm the sign-in landed; a failure here
+    // must not block the redirect, which is the actual point of the flow.
+    try {
+      await setPendingSignIn(true)
+    } catch {
+      /* presentation only — proceed to sign-in regardless */
+    }
+    // Escape and the backdrop stay live across that await, so the user may have
+    // left while it ran. Honour it: report no attempt they abandoned, and — the
+    // part that actually matters — don't yank them out to Auth0 after they've
+    // dismissed the prompt, which would make the exit not an exit.
+    //
+    // Checked *after* the write rather than latching `in-flight` before it, on
+    // purpose: nothing is committed yet in that window, so a dismissal there is
+    // a genuine decline and `dismissCloudPrompt` should have reported it as one.
+    // Latching earlier would suppress that decline and leave the prompt with no
+    // terminal event at all.
+    if (dismissedRef.current) {
+      // Undo the write above for the same reason the rejection path below does:
+      // no redirect happened, so leaving the flag set would greet a later,
+      // unrelated Settings sign-in with the post-save banner.
+      void clearPendingSignIn()
+      return
+    }
+    // Once per prompt, not once per attempt: after a failed hand-off the user can
+    // retry from the modal, and re-reporting would let one prompt's redirect rate
+    // exceed its own impression. The event necessarily counts an attempt rather
+    // than a confirmed redirect — on success the browser has navigated away
+    // before we could observe it — which is how CLAUDE.md describes it.
+    if (signInStateRef.current === 'none') {
+      trackEvent('cloud_signin_started', { rounds_saved: cloudPrompt?.count ?? 0 })
+    }
+    signInStateRef.current = 'in-flight'
+    try {
+      // Leaves the app for Auth0's hosted login, pre-filled with this address.
+      await login({ email })
+    } catch (err) {
+      // The redirect never started, so there is no pending conversion to protect
+      // and the user is back in the modal: a decline from here is a real
+      // decline, and must report as one. Only an *in-flight* hand-off suppresses
+      // the dismissal.
+      signInStateRef.current = 'failed'
+      // Keep the persisted half of the hand-off state in step with the ref, so
+      // this failure doesn't leave the flag set for a later, unrelated sign-in
+      // from Settings to trip.
+      //
+      // This closes the *rejected* hand-off only. If the redirect succeeds and
+      // the user backs out at Auth0's screen and returns signed-out, the flag
+      // survives and that stale banner can still appear once. Nothing rejects
+      // there and the page can't tell "came back from abandoning" from
+      // "returned later", so it stays open deliberately — the banner is
+      // presentational and its text is accurate whenever it does show.
+      void clearPendingSignIn()
+      // Rethrow — the modal needs this to clear its pending state and say so.
+      throw err
+    }
   }
 
   return (
@@ -185,6 +372,16 @@ export function RoundSummaryPage() {
           </>
         )}
       </div>
+
+      {cloudPrompt && (
+        <CloudPromptModal
+          roundCount={cloudPrompt.count}
+          showDontAskAgain={cloudPrompt.repeat}
+          onSubmit={handleCloudPromptSubmit}
+          onDismiss={() => dismissCloudPrompt()}
+          onDismissForever={() => void handleCloudPromptForever()}
+        />
+      )}
 
       {editIndex !== null && round.holes[editIndex] && (
         <HoleEditSheet

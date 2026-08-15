@@ -13,7 +13,7 @@ cross-device sync depends on. It implements the decisions in
 
 Before writing any sync code against real infrastructure, confirm:
 
-1. **Auth0 passwordless is in-plan.** The **Passwordless: Email** (magic link)
+1. **Auth0 passwordless is in-plan.** The **Passwordless: Email** (one-time code)
    connection is available on the free/essentials tiers, but confirm for your
    tenant.
 2. **A production email provider is configured.** Auth0's built-in dev email is
@@ -72,8 +72,28 @@ no identities with any other product (PHASE2.md §1.3).
    **Domain** and **Client ID**.
    - **Allowed Callback URLs / Logout URLs / Web Origins:** your app origin(s),
      e.g. `http://localhost:5173` for dev and your SWA hostname for prod.
-3. **Authentication → Passwordless → Email:** enable the **magic link** flow.
-   Enable the Email connection for the SPA application.
+3. **Authentication → Passwordless → Email:** enable the connection, and enable
+   it for the SPA application (Applications → *your app* → Connections →
+   Passwordless). The connection's name must be exactly **`email`** — the client
+   passes `connection: 'email'` when the post-save prompt supplies an address
+   (`src/auth/Auth0Root.tsx`). A different name fails *asymmetrically*: the
+   Settings button, which sends no parameters, keeps working while the prompt
+   path breaks.
+
+   **Also set Authentication → Authentication Profile → Identifier First.** This
+   is not optional and is easy to lose an afternoon to: on the default
+   *Identifier + Password* profile, Universal Login renders an email **and
+   password** form and ignores `connection=email` outright — no matter which
+   connections are enabled on the application, and even with every database
+   connection turned off. Identifier First is what gives Universal Login a
+   passwordless branch to take.
+
+   Consequence worth knowing before anyone tries to "fix" it: **magic links are
+   unavailable here.** Auth0 offers them only on *Classic* Universal Login, and
+   Identifier First is a New Universal Login profile — there is no configuration
+   that yields both. Users receive a one-time code, which is also the better fit
+   for a mobile PWA (a magic link must be opened in the browser that started the
+   flow; tapping it in a phone's mail client often opens a different one).
 4. **APIs → Create API** for the backend audience, e.g. identifier
    `https://api.golftrax.app` (this string is the `AUTH0_AUDIENCE` /
    `VITE_AUTH0_AUDIENCE`; it does not have to resolve to a real URL). Signing

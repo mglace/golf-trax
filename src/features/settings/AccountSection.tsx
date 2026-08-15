@@ -7,7 +7,9 @@
  * via Universal Login). Signed in → the account email, a live sync-status line,
  * and sign-out. Nothing here blocks on the network (§7).
  */
+import { useState } from 'react'
 import { useAuth } from '@/auth/authContext'
+import { useOnlineStatus } from '@/hooks/useOnlineStatus'
 import { useSyncStore, type SyncStatus } from '@/sync/syncStore'
 import { clearAccountRounds } from '@/sync/syncClient'
 import { SpinnerIcon } from '@/components/icons'
@@ -39,9 +41,32 @@ function StatusLine() {
 
 export function AccountSection() {
   const { isConfigured, isLoading, isAuthenticated, email, login, logout } = useAuth()
+  const [signInError, setSignInError] = useState<string>()
+  const online = useOnlineStatus()
 
   // Local-only build: no account surface at all.
   if (!isConfigured) return null
+
+  // Mirrors the post-save prompt's hand-off handling, so both sign-in entry
+  // points fail the same way.
+  //
+  // Offline is checked up front because the catch can't see it: `login` builds
+  // the authorize URL locally and navigates, so with no connection it resolves
+  // and the browser leaves the app for a page it can't load. The catch stays for
+  // genuine SDK failures, where floating the promise would leave an unhandled
+  // rejection and make this button appear to do nothing.
+  async function handleSignIn() {
+    setSignInError(undefined)
+    if (!online) {
+      setSignInError('You’re offline. Reconnect and try again — your rounds are safe on this device.')
+      return
+    }
+    try {
+      await login()
+    } catch {
+      setSignInError('Couldn’t start sign-in. Please try again.')
+    }
+  }
 
   // Sign-out clears this device's account-owned rounds before redirecting, so a
   // shared device never leaks one account's synced data into the next session
@@ -91,11 +116,16 @@ export function AccountSection() {
           </p>
           <button
             type="button"
-            onClick={login}
+            onClick={() => void handleSignIn()}
             className="mt-4 flex min-h-[48px] w-full items-center justify-center rounded-xl bg-fairway-700 px-4 py-3 font-semibold text-white active:bg-fairway-800"
           >
             Sign in to sync
           </button>
+          {signInError && (
+            <p role="alert" className="mt-2 text-sm text-red-600">
+              {signInError}
+            </p>
+          )}
         </>
       )}
     </section>

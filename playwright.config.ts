@@ -1,5 +1,6 @@
 import { statSync } from 'node:fs'
 import { defineConfig, devices } from '@playwright/test'
+import { AUTH0_TEST_DOMAIN } from './e2e/fixtures/auth0'
 
 /**
  * Resolve which Chromium binary to launch:
@@ -41,8 +42,30 @@ const executablePath = resolveChromiumPath()
  * `firefox` are intentionally omitted — this is a mobile-first PWA and Chromium
  * on a phone-sized viewport is the representative target.
  */
-const PORT = 5173
+/**
+ * Ports are deliberately outside Vite's dev range. `npm run dev` takes 5173 and
+ * auto-increments into 5174+ when it's busy, so a test server on either would be
+ * reused by `reuseExistingServer` — silently running the suite against a
+ * developer's own build, with their `.env.local` and none of the env pinning
+ * below. Dedicated ports keep reuse safe (a leftover server here was started by
+ * this config, so it carries the same pinning) without forcing every e2e run to
+ * fight `npm run dev` for a port.
+ */
+const PORT = 5273
 const BASE_URL = `http://localhost:${PORT}`
+
+/**
+ * A second dev server built *with* Auth0 configured, so the optional
+ * account/sync surface actually renders. The whole surface is gated at build
+ * time on `VITE_AUTH0_*` (`src/auth/authConfig.ts`), which means the default
+ * server above can never exercise it — and equally, tests on that server prove
+ * the local-only MVP is untouched.
+ *
+ * The values are deliberately fake: specs stub `auth.example.test` at the
+ * network boundary, so no test ever reaches a real tenant.
+ */
+const SYNC_PORT = 5274
+const SYNC_BASE_URL = `http://localhost:${SYNC_PORT}`
 
 export default defineConfig({
   testDir: './e2e',
@@ -62,15 +85,52 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
+      testIgnore: /\.sync\.spec\.ts$/,
       use: { ...devices['Pixel 7'], launchOptions: { executablePath } },
     },
+    {
+      // Specs named `*.sync.spec.ts` need the account surface, so they run
+      // against the sync-enabled server instead.
+      name: 'chromium-sync',
+      testMatch: /\.sync\.spec\.ts$/,
+      use: {
+        ...devices['Pixel 7'],
+        baseURL: SYNC_BASE_URL,
+        launchOptions: { executablePath },
+      },
+    },
   ],
-  webServer: {
-    command: `npm run dev -- --port ${PORT} --strictPort`,
-    url: BASE_URL,
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-    // Force proxy mode: the client talks to /api/search, which the tests stub.
-    env: { VITE_GOLF_API_KEY: '' },
-  },
+  webServer: [
+    {
+      command: `npm run dev -- --port ${PORT} --strictPort`,
+      url: BASE_URL,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+      // Pin every build-time gate this project's guarantees rest on, so a
+      // developer's `.env.local` can't change what is under test. Vite lets
+      // `.env.local` win for any key absent from `process.env`, and
+      // `.env.example` — which DEPLOY.md says to copy — ships all four of these
+      // truthy. Blank: forces proxy mode (the client talks to /api/search, which
+      // the tests stub) and keeps the account surface compiled out, which is the
+      // whole point of the local-only specs.
+      env: {
+        VITE_GOLF_API_KEY: '',
+        VITE_AUTH0_DOMAIN: '',
+        VITE_AUTH0_CLIENT_ID: '',
+        VITE_AUTH0_AUDIENCE: '',
+      },
+    },
+    {
+      command: `npm run dev -- --port ${SYNC_PORT} --strictPort`,
+      url: SYNC_BASE_URL,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+      env: {
+        VITE_GOLF_API_KEY: '',
+        VITE_AUTH0_DOMAIN: AUTH0_TEST_DOMAIN,
+        VITE_AUTH0_CLIENT_ID: 'e2e-client-id',
+        VITE_AUTH0_AUDIENCE: 'https://api.example.test',
+      },
+    },
+  ],
 })

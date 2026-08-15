@@ -131,6 +131,26 @@ export async function countRounds(): Promise<number> {
 }
 
 /**
+ * Count of live *completed* rounds — the figure the cloud prompt keys off, and
+ * what a user means by "my rounds". Unlike {@link countRounds}, drafts are
+ * excluded.
+ *
+ * **Not a cheap count.** The `status` index narrows the range scanned, but the
+ * `deletedAt` predicate can't be indexed, and a `.filter()` makes Dexie fall
+ * back to iterating a value cursor — so every completed round is deserialized
+ * with its full `holes` array, just as in {@link getCompletedRounds}. Callers on
+ * hot or cold-start paths should gate this behind whatever actually needs the
+ * number (see `features/home/SignedInBanner.tsx`).
+ */
+export async function countCompletedRounds(): Promise<number> {
+  return db.rounds
+    .where('status')
+    .equals('complete')
+    .filter((r) => !r.deletedAt)
+    .count()
+}
+
+/**
  * Whether at least one live (non-tombstoned) round exists. Unlike
  * {@link countRounds}, this stops at the first live round instead of reading
  * and deserializing every record, so for a populated library it's far cheaper

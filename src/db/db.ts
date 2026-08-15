@@ -2,18 +2,21 @@
  * Dexie (IndexedDB) database — the sole data store for the MVP.
  *
  * Tables:
- *  - courses: cached GolfCourseAPI course objects, keyed by API id.
- *  - rounds:  all rounds including in-progress drafts, keyed by uuid.
- *  - profile: single local profile row.
+ *  - courses:   cached GolfCourseAPI course objects, keyed by API id.
+ *  - rounds:    all rounds including in-progress drafts, keyed by uuid.
+ *  - profile:   single local profile row.
+ *  - syncState: singleton sync cursor + the account being synced.
+ *  - prefs:     singleton device-local UI state (the cloud-prompt cadence).
  */
 import Dexie, { type EntityTable } from 'dexie'
-import type { CachedCourse, Round, Profile, SyncState } from './types'
+import type { CachedCourse, CloudPromptPrefs, Round, Profile, SyncState } from './types'
 
 export class GolfTraxDB extends Dexie {
   courses!: EntityTable<CachedCourse, 'id'>
   rounds!: EntityTable<Round, 'id'>
   profile!: EntityTable<Profile, 'id'>
   syncState!: EntityTable<SyncState, 'id'>
+  prefs!: EntityTable<CloudPromptPrefs, 'id'>
 
   constructor() {
     super('golftrax')
@@ -72,6 +75,17 @@ export class GolfTraxDB extends Dexie {
             if (typeof r.courseId === 'number') r.courseId = String(r.courseId)
           })
       })
+    // v4: add the singleton `prefs` table backing the post-save "save to the
+    // cloud?" prompt. Device-local UI state only — nothing here syncs. A new
+    // table needs no `.upgrade()`; existing rows are untouched and the absent
+    // `cloudPrompt` row reads as "never prompted".
+    this.version(4).stores({
+      courses: 'id, lastPlayedDate',
+      rounds: 'id, status, date, courseId, dirty, deletedAt',
+      profile: 'id',
+      syncState: 'id',
+      prefs: 'id',
+    })
   }
 }
 

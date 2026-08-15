@@ -120,6 +120,33 @@ export interface Profile {
 }
 
 /**
+ * Singleton row (id === 'cloudPrompt') backing the "save your rounds to the
+ * cloud?" prompt shown after a round is saved.
+ *
+ * Deliberately its own table rather than a field on {@link Profile}: the profile
+ * syncs by LWW (PHASE2.md §11.6), and these are device-local UI preferences that
+ * must not travel between devices — a prompt already dismissed on a phone should
+ * still be offered on a newly-used tablet.
+ */
+export interface CloudPromptPrefs {
+  id: 'cloudPrompt'
+  /**
+   * The completed-round count the prompt was last shown at, so a milestone is
+   * never offered twice (e.g. saving, deleting, and re-saving a round).
+   */
+  lastPromptedCount?: number
+  /** Set by "Don't ask again" — suppresses the prompt for good on this device. */
+  dismissedForever?: boolean
+  /**
+   * Set just before redirecting to Auth0, cleared once Home has acknowledged the
+   * return. Drives the one-time "your rounds are syncing" banner; purely
+   * presentational, so losing it — or leaving it set by abandoning Auth0's
+   * screen without entering the emailed code — costs nothing.
+   */
+  pendingSignIn?: boolean
+}
+
+/**
  * Singleton sync-cursor/state row (id === 'sync'). Tracks how far the client
  * has pulled and which account it is syncing. Absent until the first sync.
  */

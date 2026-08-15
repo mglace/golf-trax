@@ -41,7 +41,7 @@ Principles that constrain every decision below:
 | --- | --- | --- |
 | Backend | Extend GolfTrax's existing Azure Functions `/api` | Already built & deployed via the SWA workflow; no new pipeline or infra. |
 | Storage | **Cosmos DB (serverless)** | Rounds are self-contained JSON documents — a natural document-store fit; serverless = pay-per-request for a personal app. |
-| Auth | **Auth0**, dedicated GolfTrax tenant/application, **passwordless email magic link** | Author already operates Auth0; handles token issuance, single-use/expiry, refresh, and email delivery. |
+| Auth | **Auth0**, dedicated GolfTrax tenant/application, **passwordless email one-time code** | Author already operates Auth0; handles token issuance, single-use/expiry, refresh, and email delivery. Code rather than magic link because New Universal Login supports only codes (§4). |
 | Account model | **Optional** — login enables sync | Preserves the frictionless MVP; local-only keeps working. |
 | Sync | Per-record **last-write-wins** by a **server-stamped version**, delta (push/pull) with tombstones | Single-user records → conflicts are rare. The winner is decided by a server-authoritative version, **not** the client clock — see §11.1. |
 | Conflict authority | **Server-authoritative** — server stamps `version` + `serverUpdatedAt` on every write; that decides the winner | Client wall-clock (`updatedAt`) is display/intent only; immune to device clock skew and equal-timestamp ties. |
@@ -73,7 +73,15 @@ support sync:
 ## 4. Authentication (Auth0 passwordless)
 
 - A **dedicated Auth0 application** for GolfTrax with the **Passwordless: Email**
-  connection (magic link). No passwords, no social — one field: email.
+  connection (one-time code). No passwords, no social — one field: email.
+  - **Not a magic link**, though earlier drafts of this doc assumed one. Auth0
+    offers magic links only on *Classic* Universal Login; the tenant runs New
+    Universal Login with the **Identifier First** profile, which is what makes a
+    passwordless connection render at all (see `PHASE2-SETUP.md` §1). Codes also
+    suit this app better: a magic link must be opened in the browser that began
+    the flow, and on a phone tapping it in a mail client routinely opens a
+    different one — bad for an installed PWA. With a code the hosted tab stays
+    open while the user fetches it and returns.
 - The SPA uses Auth0's SDK to run the passwordless flow and obtain an
   **access token** (JWT) for the GolfTrax API audience.
 - **Functions validate the JWT** on every `/api/sync/*` call: verify signature
@@ -91,10 +99,10 @@ sequenceDiagram
   participant A0 as Auth0 (passwordless)
   participant Fn as Azure Functions /api
   participant DB as Cosmos DB
-  U->>SPA: Enter email, request link
+  U->>SPA: Enter email, request code
   SPA->>A0: Start passwordless
-  A0-->>U: Email magic link
-  U->>A0: Click link
+  A0-->>U: Email one-time code
+  U->>A0: Enter code
   A0-->>SPA: Access token (JWT)
   SPA->>Fn: POST /api/sync/push (Bearer JWT)
   Fn->>A0: Validate via JWKS
@@ -270,6 +278,16 @@ interval while the app is foregrounded. All sync is best-effort and idempotent.
 - **Settings** (the page added in the hardening pass) gains a **Sign in** /
   account section and a **sync status** line ("All changes synced" / "Syncing…"
   / "Offline — will sync later" / "Sign in to sync across devices").
+- **A post-save prompt** (added later) offers the account from Round Summary
+  after a round is finalized, at the 1st/3rd/5th completed round — plus one
+  catch-up ask for a device that already had more rounds than that before the
+  prompt existed — so sync is discoverable from the core flow rather than only
+  from Settings. It takes an
+  email in-app and passes it to Auth0 as a `login_hint`; the adoption that
+  follows is the ordinary §6.4 merge, with **no claim endpoint or device id**.
+  It stays an invitation: the round is already saved locally before it renders,
+  it is dismissible, and it carries a permanent opt-out on repeat showings —
+  §2's "accounts are optional" is not weakened by asking.
 - Existing **backup export/import stays** — it's the escape hatch and the
   local-only user's story; nothing here removes it.
 - No blocking spinners tied to sync; the app never waits on the network to
