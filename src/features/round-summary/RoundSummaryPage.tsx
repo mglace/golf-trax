@@ -169,14 +169,17 @@ export function RoundSummaryPage() {
   // is the signal for whether this prompt is wearing out its welcome, and it's
   // invisible if both decline paths report identically.
   //
-  // Escape and the backdrop stay live during the sign-in hand-off on purpose:
-  // `loginWithRedirect` does async work before navigating, and on a flaky
-  // connection — the norm for an app used on a course — that window is unbounded,
-  // so disabling every exit could strand the user in a modal with no way out.
-  // The cost of leaving them live is that a dismissal can land after a start was
-  // already reported, which would count one prompt as both a conversion and a
-  // decline; CLAUDE.md says this funnel is what the cadence gets tuned on, so
-  // suppress the decline rather than the exit.
+  // Escape and the backdrop stay live throughout the sign-in hand-off, so the
+  // modal always has an exit. The cost is that a dismissal can land after
+  // `login()` was called, and by then the redirect may already be committed —
+  // which would count one prompt as both a conversion and a decline. CLAUDE.md
+  // says this funnel is what the cadence gets tuned on, so the decline is
+  // suppressed while a hand-off is `in-flight`, rather than taking the exit away.
+  //
+  // Note the window is short and *not* connection-dependent: `loginWithRedirect`
+  // builds the authorize URL locally and navigates, with no request in between.
+  // That's precisely why being offline can't be caught here and needs its own
+  // up-front guard in `CloudPromptModal`.
   // The default reads the intent latch rather than `false`, so an Escape or
   // backdrop tap that lands while the opt-out is mid-write still reports as
   // permanent — the user did press "Don't ask again"; another exit merely won
@@ -217,6 +220,17 @@ export function RoundSummaryPage() {
     } catch {
       /* presentation only — proceed to sign-in regardless */
     }
+    // Escape and the backdrop stay live across that await, so the user may have
+    // left while it ran. Honour it: report no attempt they abandoned, and — the
+    // part that actually matters — don't yank them out to Auth0 after they've
+    // dismissed the prompt, which would make the exit not an exit.
+    //
+    // Checked *after* the write rather than latching `in-flight` before it, on
+    // purpose: nothing is committed yet in that window, so a dismissal there is
+    // a genuine decline and `dismissCloudPrompt` should have reported it as one.
+    // Latching earlier would suppress that decline and leave the prompt with no
+    // terminal event at all.
+    if (dismissedRef.current) return
     // Once per prompt, not once per attempt: after a failed hand-off the user can
     // retry from the modal, and re-reporting would let one prompt's redirect rate
     // exceed its own impression. The event necessarily counts an attempt rather
