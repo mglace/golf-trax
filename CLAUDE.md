@@ -151,13 +151,16 @@ Two property-side requirements the code can't enforce:
   otherwise GA fires its own `page_view` on `pushState` using the raw URL,
   re-introducing the id and double-counting.
 - The custom event params above (`round_length`, `hole_count`, `holes_entered`,
-  `is_complete`, `total_score`, `vs_par`) only show up in standard reports and
+  `is_complete`, `total_score`, `vs_par`, plus `share_target` and
+  `highlight_kind` from `round_shared`) only show up in standard reports and
   explorations once each is registered under **Admin → Custom definitions** —
-  text params (`round_length`, `is_complete`) as custom dimensions, numeric ones
-  (`hole_count`, `holes_entered`, `total_score`, `vs_par`) as custom metrics.
-  Until then they're visible only in DebugView/Realtime and the BigQuery export,
-  and registration is **not** retroactive — data collected before a definition
-  exists is not backfilled.
+  text params (`round_length`, `is_complete`, `share_target`, `highlight_kind`)
+  as custom dimensions, numeric ones (`hole_count`, `holes_entered`,
+  `total_score`, `vs_par`) as custom metrics. Until then they're visible only in
+  DebugView/Realtime and the BigQuery export, and registration is **not**
+  retroactive — data collected before a definition exists is not backfilled.
+  Register a param BEFORE the feature that emits it ships, or its first weeks of
+  data are unrecoverable.
 
 ### Sync engine (Phase 2) — client/server lockstep
 
