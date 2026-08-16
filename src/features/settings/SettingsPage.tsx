@@ -183,6 +183,8 @@ export function SettingsPage() {
 
       <AccountSection />
 
+      <p className="mt-8 text-center text-xs text-slate-400">Version {__APP_VERSION__}</p>
+
       {pending && (
         <ConfirmDialog
           title="Import this backup?"

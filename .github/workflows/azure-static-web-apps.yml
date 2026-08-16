@@ -21,6 +21,14 @@ jobs:
         with:
           submodules: false
 
+      # Rewrite package.json's version to `<base>+build.<run number>` so the
+      # version shown on the Settings screen (Vite inlines it as
+      # __APP_VERSION__) identifies this specific deploy. Working-tree only —
+      # the bump is never committed, so main keeps the hand-set base version
+      # and this workflow never pushes to the branch it just built.
+      - name: Stamp build version
+        run: node scripts/stamp-build-version.mjs "${{ github.run_number }}"
+
       - name: Build and Deploy
         uses: Azure/static-web-apps-deploy@v1
         with:

@@ -2,6 +2,11 @@ import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'node:path'
+import { readFileSync } from 'node:fs'
+
+const { version } = JSON.parse(
+  readFileSync(path.resolve(__dirname, './package.json'), 'utf-8'),
+) as { version: string }
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -9,6 +14,12 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+  },
+  // package.json's version, inlined at build time so the app can display which
+  // build is installed (see src/features/settings/SettingsPage.tsx). Defined
+  // here rather than read via an import so the JSON never lands in the bundle.
+  define: {
+    __APP_VERSION__: JSON.stringify(version),
   },
   // Vitest scopes to the SPA source; the api/ workspace has its own
   // Node-native tests (`node --test`), which vitest must not try to run.
