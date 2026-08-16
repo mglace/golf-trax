@@ -39,16 +39,16 @@ app.http('share-create', {
       return json(429, { error: 'Too many shares from this network. Try again later.' })
     }
 
+    const origin = publicOrigin(request)
     const revokeToken = newRevokeToken()
     let doc
     try {
-      doc = await createShare(snapshot, revokeToken)
+      doc = await createShare(snapshot, revokeToken, origin)
     } catch (err) {
       context.error('Failed to persist share', err)
       return json(500, { error: 'Could not create the share link.' })
     }
 
-    const origin = publicOrigin(request)
     return json(201, {
       shareId: doc.id,
       url: `${origin}/r/${doc.id}`,

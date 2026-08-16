@@ -31,6 +31,13 @@ export function toRoutePattern(pathname: string): string {
     if (segments.length >= 2) return '/round/:roundId'
   }
 
+  // /r/:shareId — the public share landing page. Server-rendered, so the SPA
+  // does not normally route it, but a share link opened in an installed PWA can
+  // land here. Named explicitly rather than left to the isIdLike fallback: a
+  // share id is base64url and can come out purely alphabetic, which that net
+  // does not catch (see isIdLike).
+  if (segments[0] === 'r' && segments.length >= 2) return '/r/:shareId'
+
   if (segments[0] === 'new') {
     // /new/manual is a fixed route; /new/:courseId carries the id.
     if (segments[1] && segments[1] !== 'manual') return '/new/:courseId'
@@ -81,6 +88,7 @@ const ROUTE_TITLES: Record<string, string> = {
   '/new/:courseId': 'Course setup',
   '/round/:roundId': 'Round entry',
   '/round/:roundId/summary': 'Round summary',
+  '/r/:shareId': 'Shared round',
 }
 
 // React Router matches paths case-insensitively (AppLayout.tsx notes this), so

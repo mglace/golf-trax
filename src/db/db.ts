@@ -7,13 +7,14 @@
  *  - profile: single local profile row.
  */
 import Dexie, { type EntityTable } from 'dexie'
-import type { CachedCourse, Round, Profile, SyncState } from './types'
+import type { CachedCourse, Round, Profile, SyncState, ShareRecord } from './types'
 
 export class GolfTraxDB extends Dexie {
   courses!: EntityTable<CachedCourse, 'id'>
   rounds!: EntityTable<Round, 'id'>
   profile!: EntityTable<Profile, 'id'>
   syncState!: EntityTable<SyncState, 'id'>
+  shares!: EntityTable<ShareRecord, 'id'>
 
   constructor() {
     super('golftrax')
@@ -72,6 +73,18 @@ export class GolfTraxDB extends Dexie {
             if (typeof r.courseId === 'number') r.courseId = String(r.courseId)
           })
       })
+    // v4: `shares` — published share links, keyed by roundId so re-sharing a
+    // round reuses its link. No `.upgrade()`: a brand-new empty store needs no
+    // backfill (v2 adding `syncState` is the precedent). Shares are local-only
+    // and never sync, which is exactly why they live here rather than as fields
+    // on `Round`.
+    this.version(4).stores({
+      courses: 'id, lastPlayedDate',
+      rounds: 'id, status, date, courseId, dirty, deletedAt',
+      profile: 'id',
+      syncState: 'id',
+      shares: 'id, createdAt',
+    })
   }
 }
 

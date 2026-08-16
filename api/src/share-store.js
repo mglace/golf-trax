@@ -117,8 +117,16 @@ async function consumeRateLimit(ip, context) {
   }
 }
 
-/** Persist a share. Returns the stored document. */
-async function createShare(snapshot, revokeToken) {
+/**
+ * Persist a share. Returns the stored document.
+ *
+ * `origin` is recorded because SWA staging environments inherit the production
+ * app settings: a share created while testing a PR preview lands in this same
+ * container, with a link pointing at a host that dies when the PR closes.
+ * Stamping it keeps those records identifiable and purgeable instead of
+ * indistinguishable from real user shares.
+ */
+async function createShare(snapshot, revokeToken, origin) {
   const id = newShareId()
   const doc = {
     id,
@@ -127,6 +135,7 @@ async function createShare(snapshot, revokeToken) {
     createdAt: new Date().toISOString(),
     revokeHash: hashToken(revokeToken),
   }
+  if (origin) doc.origin = origin
   await sharesContainer().items.create(doc)
   return doc
 }

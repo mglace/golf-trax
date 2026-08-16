@@ -50,6 +50,15 @@ describe('toRoutePattern', () => {
       expect(toRoutePattern('/widget/deadbeefcafe0001')).toBe('/widget/:id')
     })
 
+    it('collapses the public share route, including all-alphabetic ids', () => {
+      expect(toRoutePattern('/r/vX9_kQ2mB4tZpLrN0abc')).toBe('/r/:shareId')
+      // The named rule exists precisely because a base64url share id can come
+      // out purely alphabetic, which the isIdLike fallback does not catch — so
+      // without it a real share id would be sent to GA verbatim.
+      expect(toRoutePattern('/r/abcdefghijklmnop')).toBe('/r/:shareId')
+      expect(toRoutePattern('/r/AbCdEf')).toBe('/r/:shareId')
+    })
+
     it('collapses long digit-bearing tokens (base64url / nanoid style)', () => {
       // A hypothetical /share/:token where the token isn't uuid/numeric/hex.
       expect(toRoutePattern('/share/A1bcDEf2ghIJk3')).toBe('/share/:id')
