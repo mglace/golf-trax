@@ -6,27 +6,49 @@ The share endpoints need one Cosmos container and one app setting. Values below
 match the existing account in `docs/PHASE2-SETUP.md` (`golftrax-cosmos` in
 `golftrax-rg`, database `golftrax`).
 
+> **Windows note.** The PowerShell variants below are not cosmetic — the bash
+> `--idx @shares-index.json` is a *parse error* in PowerShell, where `@` starts
+> an array expression. They were written from documented shell behaviour rather
+> than executed; there is no Windows environment in CI or the dev container.
+
 ### 1. Create the `shares` container
+
+Run from the repo root so the relative `shares-index.json` path resolves.
 
 ```bash
 az cosmosdb sql container create \
   --account-name golftrax-cosmos --resource-group golftrax-rg \
   --database-name golftrax --name shares \
   --partition-key-path /id \
-  --ttl -1 \
+  --ttl=-1 \
   --idx @shares-index.json
+```
+
+```powershell
+az cosmosdb sql container create `
+  --account-name golftrax-cosmos --resource-group golftrax-rg `
+  --database-name golftrax --name shares `
+  --partition-key-path /id `
+  --ttl=-1 `
+  --idx "@shares-index.json"
 ```
 
 The account is serverless, so there is no `--throughput` flag.
 
-**`--ttl -1` is not optional.** It turns the TTL feature *on* without expiring
+**`--ttl=-1` is not optional.** It turns the TTL feature *on* without expiring
 anything by default. Share documents set no `ttl` and so live forever; the
 per-IP rate-limit counters set their own `ttl: 7200` and self-GC. With TTL
 disabled at the container level, per-item `ttl` is **silently ignored** — the
 counters would accumulate forever and never expire. This is the same reasoning
 as the `rounds` container, where only tombstones carry a `ttl`.
 
-> If your az CLI parses `-1` as a flag, use `--ttl=-1`.
+The `=` form is used rather than `--ttl -1` because az can otherwise parse `-1`
+as the start of another flag. `docs/PHASE2-SETUP.md` still shows the spaced form
+for the `rounds` container; either works there, but `=` is unambiguous on every
+shell.
+
+> **cmd.exe:** continuations are `^` instead of `` ` ``, and `@shares-index.json`
+> needs no quoting.
 
 `shares-index.json` excludes `/snapshot/*` — the pars/scores arrays and stat
 objects are never queried (the only read path is a point read by `id`), so
@@ -43,13 +65,34 @@ and sync:
 az staticwebapp appsettings list \
   --name golftrax --resource-group golftrax-rg -o table
 
+SALT=$(openssl rand -hex 32)
 az staticwebapp appsettings set \
   --name golftrax --resource-group golftrax-rg \
-  --setting-names SHARE_IP_SALT=<random-string>
+  --setting-names "SHARE_IP_SALT=$SALT"
 
 az staticwebapp appsettings list \
   --name golftrax --resource-group golftrax-rg -o table
 ```
+
+```powershell
+az staticwebapp appsettings list `
+  --name golftrax --resource-group golftrax-rg -o table
+
+$bytes = New-Object 'byte[]' 32
+[System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+$salt = ($bytes | ForEach-Object { $_.ToString('x2') }) -join ''
+
+az staticwebapp appsettings set `
+  --name golftrax --resource-group golftrax-rg `
+  --setting-names "SHARE_IP_SALT=$salt"
+
+az staticwebapp appsettings list `
+  --name golftrax --resource-group golftrax-rg -o table
+```
+
+**Hex, not base64.** A base64 salt can contain `=`, which collides with the
+`--setting-names KEY=VALUE` parsing and truncates the value — leaving a salt
+that is silently shorter than intended.
 
 | App setting | Required | Purpose |
 | --- | --- | --- |
@@ -75,20 +118,53 @@ curl -sS -X POST https://golftrax.app/api/share \
   -d '{"course":"Pine Ridge Golf Club","tee":"White tees",
        "date":"2026-08-15T12:00:00.000Z",
        "pars":[4,5,3,4,4,3,5,4,4],"scores":[5,6,3,4,5,4,6,5,4]}'
-```
 
-A `201` returns `{ shareId, url, imageUrl, revokeToken }`. Then open `url` in a
-browser, and confirm the image renders (a **small** PNG means the bundled fonts
-didn't load — resvg draws a blank rather than erroring). Finally paste `url` into
-Slack or iMessage: the OG preview is the only thing that can't be verified any
-other way, and it is the entire point of the feature.
-
-Clean up the test share with its token:
-
-```bash
+# Clean up, with the token the create call returned.
 curl -sS -X DELETE https://golftrax.app/api/share/<shareId> \
   -H 'X-GolfTrax-Revoke-Token: <revokeToken>'
 ```
+
+```powershell
+# TTL must report -1, not null.
+az cosmosdb sql container show `
+  --account-name golftrax-cosmos --resource-group golftrax-rg `
+  --database-name golftrax --name shares `
+  --query "resource.defaultTtl"
+
+# Invoke-RestMethod rather than curl: `curl` is an alias for Invoke-WebRequest
+# in Windows PowerShell 5.1, and passing JSON through native-command quoting is
+# a well-known source of pain.
+$body = @{
+  course = 'Pine Ridge Golf Club'
+  tee    = 'White tees'
+  date   = '2026-08-15T12:00:00.000Z'
+  pars   = @(4,5,3,4,4,3,5,4,4)
+  scores = @(5,6,3,4,5,4,6,5,4)
+} | ConvertTo-Json -Depth 5
+
+$share = Invoke-RestMethod -Method Post -Uri 'https://golftrax.app/api/share' `
+  -ContentType 'application/json' -Body $body
+$share
+
+# Font check — expect ~500 KB.
+(Invoke-WebRequest -Uri $share.imageUrl).RawContentLength
+
+# Clean up.
+Invoke-RestMethod -Method Delete `
+  -Uri "https://golftrax.app/api/share/$($share.shareId)" `
+  -Headers @{ 'X-GolfTrax-Revoke-Token' = $share.revokeToken }
+```
+
+> **cmd.exe:** `curl.exe` ships with Windows 10+, but the JSON body must be one
+> line with `\"`-escaped quotes:
+> `curl -sS -X POST https://golftrax.app/api/share -H "Content-Type: application/json" -d "{\"course\":\"Pine Ridge Golf Club\",\"tee\":\"White tees\",\"date\":\"2026-08-15T12:00:00.000Z\",\"pars\":[4,5,3,4,4,3,5,4,4],\"scores\":[5,6,3,4,5,4,6,5,4]}"`
+
+A `201` returns `{ shareId, url, imageUrl, revokeToken }`. Then open `url` in a
+browser, and confirm the image renders — a **small** PNG (a few hundred bytes
+rather than a few hundred KB) means the bundled fonts didn't load, since resvg
+draws a blank rather than erroring. Finally paste `url` into Slack or iMessage:
+the OG preview is the only thing that can't be verified any other way, and it is
+the entire point of the feature.
 
 ### Note on preview environments
 
