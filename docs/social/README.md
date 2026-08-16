@@ -1,4 +1,110 @@
-# Social share card — design sample
+# Social share card
+
+## Deployment setup (required — the endpoints 500 without it)
+
+The share endpoints need one Cosmos container and one app setting. Values below
+match the existing account in `docs/PHASE2-SETUP.md` (`golftrax-cosmos` in
+`golftrax-rg`, database `golftrax`).
+
+### 1. Create the `shares` container
+
+```bash
+az cosmosdb sql container create \
+  --account-name golftrax-cosmos --resource-group golftrax-rg \
+  --database-name golftrax --name shares \
+  --partition-key-path /id \
+  --ttl -1 \
+  --idx @shares-index.json
+```
+
+The account is serverless, so there is no `--throughput` flag.
+
+**`--ttl -1` is not optional.** It turns the TTL feature *on* without expiring
+anything by default. Share documents set no `ttl` and so live forever; the
+per-IP rate-limit counters set their own `ttl: 7200` and self-GC. With TTL
+disabled at the container level, per-item `ttl` is **silently ignored** — the
+counters would accumulate forever and never expire. This is the same reasoning
+as the `rounds` container, where only tombstones carry a `ttl`.
+
+> If your az CLI parses `-1` as a flag, use `--ttl=-1`.
+
+`shares-index.json` excludes `/snapshot/*` — the pars/scores arrays and stat
+objects are never queried (the only read path is a point read by `id`), so
+indexing them just costs RU on every write. The rest stays indexed so `origin`
+and `createdAt` remain queryable for cleanup.
+
+### 2. Add the app settings
+
+`az staticwebapp appsettings set` is an upsert, but **list first and verify
+after** — losing `GOLF_API_KEY` or `COSMOS_KEY` would take down course search
+and sync:
+
+```bash
+az staticwebapp appsettings list \
+  --name golftrax --resource-group golftrax-rg -o table
+
+az staticwebapp appsettings set \
+  --name golftrax --resource-group golftrax-rg \
+  --setting-names SHARE_IP_SALT=<random-string>
+
+az staticwebapp appsettings list \
+  --name golftrax --resource-group golftrax-rg -o table
+```
+
+| App setting | Required | Purpose |
+| --- | --- | --- |
+| `SHARE_IP_SALT` | yes | Salts the hashed IPs used for rate limiting. Defaults to a constant, which works but makes hashes guessable. |
+| `SHARE_RATE_LIMIT` | no | Shares per IP per hour. Defaults to `20`. |
+| `PUBLIC_ORIGIN` | no | Fallback origin for share links. Requests normally derive it from the incoming host; the built-in fallback is already `https://golftrax.app`. |
+
+`COSMOS_ENDPOINT` / `COSMOS_KEY` / `COSMOS_DATABASE` are already set for sync and
+are reused as-is.
+
+### 3. Verify
+
+```bash
+# TTL must report -1, not null.
+az cosmosdb sql container show \
+  --account-name golftrax-cosmos --resource-group golftrax-rg \
+  --database-name golftrax --name shares \
+  --query "resource.defaultTtl"
+
+# Create a share and follow it end to end.
+curl -sS -X POST https://golftrax.app/api/share \
+  -H 'Content-Type: application/json' \
+  -d '{"course":"Pine Ridge Golf Club","tee":"White tees",
+       "date":"2026-08-15T12:00:00.000Z",
+       "pars":[4,5,3,4,4,3,5,4,4],"scores":[5,6,3,4,5,4,6,5,4]}'
+```
+
+A `201` returns `{ shareId, url, imageUrl, revokeToken }`. Then open `url` in a
+browser, and confirm the image renders (a **small** PNG means the bundled fonts
+didn't load — resvg draws a blank rather than erroring). Finally paste `url` into
+Slack or iMessage: the OG preview is the only thing that can't be verified any
+other way, and it is the entire point of the feature.
+
+Clean up the test share with its token:
+
+```bash
+curl -sS -X DELETE https://golftrax.app/api/share/<shareId> \
+  -H 'X-GolfTrax-Revoke-Token: <revokeToken>'
+```
+
+### Note on preview environments
+
+SWA staging environments inherit production app settings, so a share created
+while testing a PR lands in the **production** container, with a link pointing at
+a host that dies when the PR closes. Each document records the `origin` it was
+created from, so those are identifiable:
+
+```sql
+SELECT c.id, c.origin, c.createdAt FROM c
+WHERE c.type = 'share' AND NOT CONTAINS(c.origin, 'golftrax.app')
+```
+
+---
+
+# Design sample
 
 A **prototype**, not app code. `round-card.html` is a standalone page that renders
 a shareable post-round recap card at 1080×1350 (4:5, the Instagram/Facebook feed
