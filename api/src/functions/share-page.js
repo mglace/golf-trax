@@ -103,46 +103,69 @@ function page({ model, imageUrl, pageUrl, appUrl }) {
 </html>`
 }
 
+/**
+ * The rewrite target. `staticwebapp.config.json` sends `/r/*` here, so this
+ * route name must match that `rewrite` value EXACTLY.
+ *
+ * A managed function is only reachable at `/api/<its route>`, so aiming the
+ * rewrite at a path no function claims produces a bare 404 with nothing to
+ * explain it. That happened: an earlier version registered only
+ * `r/{shareId?}`, which made `/api/r/{id}` work while every `/r/{id}` link the
+ * app actually hands out 404'd — the pretty URL is the one users get.
+ *
+ * The rewrite erases the routed path, so the id comes from `x-ms-original-url`.
+ */
 app.http('share-page', {
   methods: ['GET'],
   authLevel: 'anonymous',
-  // Also directly addressable, so the page works even if the rewrite is ever
-  // removed and as the documented fallback URL shape.
-  route: 'r/{shareId?}',
-  handler: async (request, context) => {
-    const shareId = shareIdFromPath(request) || request.params.shareId
-    if (!shareId || !/^[A-Za-z0-9_-]+$/.test(shareId)) {
-      return json(400, { error: 'Invalid share id.' })
-    }
-
-    let share
-    try {
-      share = await getShare(shareId)
-    } catch (err) {
-      context.error('Failed to load share', err)
-      return json(500, { error: 'Could not load the share.' })
-    }
-    if (!share) {
-      return {
-        status: 404,
-        headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
-        body: '<!doctype html><meta charset="utf-8"><title>Not found — GolfTrax</title><p>This round is no longer shared. <a href="/">Open GolfTrax</a></p>',
-      }
-    }
-
-    const origin = publicOrigin(request)
-    const html = page({
-      model: buildModel(share.snapshot),
-      imageUrl: `${origin}/api/share/${shareId}/image.png`,
-      pageUrl: `${origin}/r/${shareId}`,
-      // UTM so landings from a share are separable from organic traffic.
-      appUrl: `${origin}/?utm_source=share&utm_medium=social&utm_campaign=round_card`,
-    })
-
-    return {
-      status: 200,
-      headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': PAGE_CACHE },
-      body: html,
-    }
-  },
+  route: 'share-page',
+  handler: async (request, context) => handleSharePage(request, context),
 })
+
+/**
+ * Direct `/api/r/{shareId}` access — a fallback that doesn't depend on the
+ * rewrite, which is exactly the failure mode this pair now covers.
+ */
+app.http('share-page-direct', {
+  methods: ['GET'],
+  authLevel: 'anonymous',
+  route: 'r/{shareId?}',
+  handler: async (request, context) => handleSharePage(request, context),
+})
+
+async function handleSharePage(request, context) {
+  const shareId = shareIdFromPath(request) || request.params.shareId
+  if (!shareId || !/^[A-Za-z0-9_-]+$/.test(shareId)) {
+    return json(400, { error: 'Invalid share id.' })
+  }
+
+  let share
+  try {
+    share = await getShare(shareId)
+  } catch (err) {
+    context.error('Failed to load share', err)
+    return json(500, { error: 'Could not load the share.' })
+  }
+  if (!share) {
+    return {
+      status: 404,
+      headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+      body: '<!doctype html><meta charset="utf-8"><title>Not found — GolfTrax</title><p>This round is no longer shared. <a href="/">Open GolfTrax</a></p>',
+    }
+  }
+
+  const origin = publicOrigin(request)
+  const html = page({
+    model: buildModel(share.snapshot),
+    imageUrl: `${origin}/api/share/${shareId}/image.png`,
+    pageUrl: `${origin}/r/${shareId}`,
+    // UTM so landings from a share are separable from organic traffic.
+    appUrl: `${origin}/?utm_source=share&utm_medium=social&utm_campaign=round_card`,
+  })
+
+  return {
+    status: 200,
+    headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': PAGE_CACHE },
+    body: html,
+  }
+}

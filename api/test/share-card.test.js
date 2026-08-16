@@ -2,7 +2,7 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { buildModel, renderShareSvg, formatCardDate } = require('../src/share-card')
+const { buildModel, renderShareSvg, formatCardDate, layoutSections } = require('../src/share-card')
 
 /**
  * The share card is rendered ONLY here, on the server — the app displays this
@@ -102,6 +102,76 @@ test('formatCardDate: renders a stable label regardless of server locale', () =>
 
 test('formatCardDate: an unparseable date degrades to empty, not "Invalid Date"', () => {
   assert.equal(formatCardDate('not-a-date'), '')
+})
+
+/**
+ * The card is a fixed 1080x1350 crop but its content is not fixed — a 9-hole
+ * round with nothing tracked is far shorter than a full 18 with three stat
+ * tiles. These assert that the layout absorbs that difference instead of
+ * pooling it into a dead zone above the CTA, which is what a real shared card
+ * looked like before this existed.
+ */
+const CTA_TOP = 1350 - 138
+
+/** Where the last section ends, given a layout. */
+function contentBottom(layout) {
+  return (
+    layout.startY +
+    layout.gap * layout.sections.length +
+    layout.sections.reduce((a, s) => a + s.height, 0)
+  )
+}
+
+const SPARSE = () => {
+  const pars = PAR72.slice(9)
+  return snapshot({
+    pars,
+    scores: pars.map((p) => p + 1),
+    holeNumbers: [10, 11, 12, 13, 14, 15, 16, 17, 18],
+  })
+}
+
+const FULL = () =>
+  snapshot({
+    fairways: { hit: 8, opp: 14 },
+    gir: { hit: 5, opp: 18 },
+    putts: { total: 32, avg: '1.8' },
+    badgeText: '4 better than your 10-round average',
+  })
+
+test('layoutSections: a full round fills the frame without overrunning the CTA', () => {
+  const layout = layoutSections(buildModel(FULL()), 62)
+  assert.ok(contentBottom(layout) <= CTA_TOP + 1, 'content must not overlap the CTA')
+  assert.ok(CTA_TOP - contentBottom(layout) < 2, 'content should reach the CTA')
+})
+
+test('layoutSections: a sparse round leaves no dead zone above the CTA', () => {
+  // The regression: 9 holes, no stats, no badge. Previously ~a quarter of the
+  // card was empty here.
+  const layout = layoutSections(buildModel(SPARSE()), 62)
+  assert.ok(CTA_TOP - contentBottom(layout) < 2)
+})
+
+test('layoutSections: sparser content gets larger gaps, not a gap at the end', () => {
+  const full = layoutSections(buildModel(FULL()), 62)
+  const sparse = layoutSections(buildModel(SPARSE()), 62)
+  assert.ok(sparse.gap > full.gap, 'slack goes into the gaps')
+  assert.ok(sparse.gap <= 72, 'but not so far that sections read as unrelated')
+  assert.ok(full.gap >= 30, 'and never so tight that the card looks cramped')
+})
+
+test('layoutSections: omits sections the round has no data for', () => {
+  const ids = layoutSections(buildModel(SPARSE()), 62).sections.map((s) => s.id)
+  assert.ok(!ids.includes('badge'))
+  assert.ok(ids.includes('tiles')) // "pars or better" always backfills one
+  assert.deepEqual(layoutSections(buildModel(FULL()), 62).sections.map((s) => s.id), [
+    'course',
+    'badge',
+    'hero',
+    'strip',
+    'tiles',
+    'scoring',
+  ])
 })
 
 test('renderShareSvg: produces a well-formed 1080x1350 document', () => {

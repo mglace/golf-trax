@@ -5,16 +5,19 @@
  * JavaScript, so the preview image has to be produced here rather than in the
  * SPA. Output is a self-contained SVG string; `renderSharePng` rasterizes it.
  *
- * SPIKE STATUS — this file exists to prove the pipeline works end to end. Two
- * things must change before it ships:
- *   1. `buildModel` duplicates scoring logic that belongs in the pure
- *      `src/domain/shareCard.ts`, with this file as its JS port and a parity
- *      test, following the sync.ts / sync-core.js precedent.
- *   2. `fitText` estimates text width from a per-character average because SVG
- *      has no measurement API here. It is approximate — see the note there.
+ * This is the ONLY place a card becomes pixels — the app displays this output
+ * rather than drawing its own preview, so the in-app and social previews cannot
+ * disagree by construction.
  *
  * Layout is absolutely positioned: resvg implements SVG, not CSS layout, so
- * there is no flexbox to lean on. Every coordinate is explicit.
+ * there is no flexbox to lean on. Every coordinate is explicit, and vertical
+ * space is distributed by `layoutSections` rather than accumulated — see the
+ * note there for why.
+ *
+ * One standing caveat: `fitText` estimates text width from a per-character
+ * average because resvg exposes no measurement API. Never position one element
+ * from another element's estimated text width; use fixed columns or
+ * `text-anchor` instead (the scoring legend learned this the hard way).
  */
 
 const W = 1080
@@ -194,10 +197,82 @@ function kpiTile(x, y, w, label, value, sub) {
   ].join('')
 }
 
+/** Height of each stacked section, in render order. Sections absent from the
+ *  model (no badge) are simply omitted. */
+const HEADER_H = 46
+const HERO_H = 152
+const STRIP_H = 62 + 254
+const TILES_H = 148
+// title → bar → legend baseline, plus room below the baseline for descenders.
+// Without that trailing space the legend renders flush against the CTA's top
+// edge, which reads as a collision rather than a section boundary.
+const SCORING_H = 34 + 30 + 34 + 18
+const BADGE_H = 48
+const CTA_H = 138
+const TOP_PAD = 48
+
+/** Gaps below this read as cramped; above it the sections stop looking related. */
+const MIN_GAP = 30
+const MAX_GAP = 72
+
+/**
+ * Decide where each section sits.
+ *
+ * The card is a fixed 1080x1350 (the 4:5 social crop — varying the aspect ratio
+ * to fit the content would make cards crop badly in feeds), but its content
+ * isn't fixed: a 9-hole round with no putts tracked is much shorter than a full
+ * 18 with three stat tiles. Walking a cursor down with constant margins pools
+ * all that slack into one dead zone above the CTA, which is exactly what a real
+ * shared card looked like.
+ *
+ * So: measure what's actually present, then spread the leftover space across
+ * the gaps between sections. Anything still left over after the gap ceiling is
+ * pushed into the start offset, so a very sparse card sits optically centred
+ * rather than top-aligned above a hole.
+ *
+ * Pure and exported so the "no dead zone" property can be asserted numerically
+ * rather than eyeballed.
+ */
+function layoutSections(model, courseHeadSize) {
+  const courseH = courseHeadSize * 0.78 + 14 + 34
+  const sections = [
+    { id: 'course', height: courseH },
+    ...(model.badgeText ? [{ id: 'badge', height: BADGE_H }] : []),
+    { id: 'hero', height: HERO_H },
+    { id: 'strip', height: STRIP_H },
+    ...(model.tiles.length > 0 ? [{ id: 'tiles', height: TILES_H }] : []),
+    { id: 'scoring', height: SCORING_H },
+  ]
+
+  const contentTop = TOP_PAD + HEADER_H
+  const available = H - CTA_H - contentTop
+  const used = sections.reduce((sum, s) => sum + s.height, 0)
+  const gapCount = sections.length // one gap above each section, incl. the first
+
+  const raw = (available - used) / gapCount
+  const gap = Math.max(MIN_GAP, Math.min(MAX_GAP, raw))
+
+  // Whatever the gaps couldn't absorb becomes leading space, so the block is
+  // centred in the leftover rather than hugging the header.
+  const leftover = available - used - gap * gapCount
+  const startY = contentTop + Math.max(0, leftover / 2)
+
+  return { sections, gap, startY, contentTop, available, used }
+}
+
 /** Compose the card. Returns an SVG document string. */
 function renderShareSvg(model) {
   const inner = W - PAD * 2
   const head = fitText(model.course, 62, inner, 40, true)
+  const layout = layoutSections(model, head.size)
+  const nextY = (id) => {
+    const i = layout.sections.findIndex((s) => s.id === id)
+    return (
+      layout.startY +
+      layout.gap * (i + 1) +
+      layout.sections.slice(0, i).reduce((sum, s) => sum + s.height, 0)
+    )
+  }
 
   let y = 48
 
@@ -234,24 +309,21 @@ function renderShareSvg(model) {
   y += 46
 
   // ---- course
-  y += 34
+  y = nextY('course')
   svg += text(PAD, y + head.size * 0.78, head.text, { size: head.size, weight: 700 })
-  y += head.size * 0.78 + 14
-  svg += text(PAD, y + 24, model.subtitle, { size: 24, fill: INK_2 })
-  y += 34
+  svg += text(PAD, y + head.size * 0.78 + 38, model.subtitle, { size: 24, fill: INK_2 })
 
   // ---- comparison badge (the share trigger — omitted when there's no history)
   if (model.badgeText) {
-    y += 22
+    y = nextY('badge')
     const bw = estWidth(model.badgeText, 21, true) + 88
     svg += rect(PAD, y, bw, 48, 24, 'rgba(52,211,153,0.13)', 'stroke="rgba(52,211,153,0.34)" stroke-width="1"')
     svg += `<path d="M${PAD + 26} ${y + 30} L${PAD + 35} ${y + 15} L${PAD + 44} ${y + 30} Z" fill="${TONE.birdie}"/>`
     svg += text(PAD + 56, y + 31, model.badgeText, { size: 21, weight: 600, fill: TONE.birdie })
-    y += 48
   }
 
   // ---- hero
-  y += 20
+  y = nextY('hero')
   svg += text(PAD, y + 130, model.totalScore, { size: 194, weight: 700 })
   const heroX = PAD + estWidth(String(model.totalScore), 194, true) + 44
   const cells = [
@@ -265,30 +337,29 @@ function renderShareSvg(model) {
     svg += text(cx + 24, y + 130, c.k, { size: 18, weight: 600, fill: INK_3, tracking: 2.3 })
     cx += 24 + Math.max(estWidth(String(c.v), 54, true), estWidth(c.k, 18, true)) + 40
   }
-  y += 152
 
   // ---- hole by hole
-  y += 30
+  y = nextY('strip')
   svg += text(PAD, y + 16, 'HOLE BY HOLE', { size: 19, weight: 700, fill: INK_3, tracking: 2.8 })
   svg += text(PAD, y + 42, 'score over par  ·  bars show strokes vs par', { size: 18, fill: INK_3 })
   svg += text(W - PAD, y + 16, model.splitLabel, { size: 21, fill: INK_2, anchor: 'end' })
-  y += 62
-  svg += strip(model, PAD, y)
-  y += 254
+  svg += strip(model, PAD, y + 62)
 
-  // ---- the round
-  y += 30
-  const tileW = (inner - 36) / 3
-  model.tiles.forEach((t, i) => {
-    svg += kpiTile(PAD + i * (tileW + 18), y, tileW, t.label, t.value, t.sub)
-  })
-  y += 148
+  // ---- the round. Tiles share the full width rather than always thirds, so a
+  // round with only one tracked stat doesn't strand it beside two-thirds of gap.
+  if (model.tiles.length > 0) {
+    y = nextY('tiles')
+    const n = model.tiles.length
+    const tileW = (inner - 18 * (n - 1)) / n
+    model.tiles.forEach((t, i) => {
+      svg += kpiTile(PAD + i * (tileW + 18), y, tileW, t.label, t.value, t.sub)
+    })
+  }
 
   // ---- scoring
-  y += 30
+  y = nextY('scoring')
   svg += text(PAD, y + 16, 'SCORING', { size: 19, weight: 700, fill: INK_3, tracking: 2.8 })
-  y += 34
-  svg += distribution(model, PAD, y)
+  svg += distribution(model, PAD, y + 34)
 
   // ---- CTA (anchored to the bottom: this is the acquisition surface and must
   // never be cropped, whatever the content above it does)
@@ -396,4 +467,4 @@ function buildModel(snapshot) {
   }
 }
 
-module.exports = { renderShareSvg, buildModel, formatCardDate, TONE }
+module.exports = { renderShareSvg, buildModel, formatCardDate, layoutSections, TONE }
