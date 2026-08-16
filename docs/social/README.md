@@ -199,6 +199,13 @@ draws a blank rather than erroring. Finally paste `url` into Slack or iMessage:
 the OG preview is the only thing that can't be verified any other way, and it is
 the entire point of the feature.
 
+> **Always test the unfurl with a share id you have never pasted before.**
+> Slack caches unfurl results per URL — *including failures* — and won't
+> re-unfurl a URL recently posted in the same channel. Paste a link while the
+> endpoint is broken and it will keep showing you no preview long after the
+> server is fixed, which looks exactly like a server bug and isn't. This cost
+> real debugging time once. A fresh `POST /api/share` costs nothing.
+
 ### Note on preview environments
 
 SWA staging environments inherit production app settings, so a share created
