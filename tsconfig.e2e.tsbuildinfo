@@ -1,1 +1,1 @@
-{"root":["./playwright.config.ts","./e2e/search.spec.ts","./e2e/fixtures/courses.ts"],"version":"5.9.3"}
+{"root":["./playwright.config.ts","./e2e/search.spec.ts","./e2e/share.spec.ts","./e2e/fixtures/courses.ts","./e2e/fixtures/rounds.ts"],"version":"5.9.3"}

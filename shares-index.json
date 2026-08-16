@@ -1,0 +1,6 @@
+{
+  "indexingMode": "consistent",
+  "automatic": true,
+  "includedPaths": [{ "path": "/*" }],
+  "excludedPaths": [{ "path": "/snapshot/*" }, { "path": "/\"_etag\"/?" }]
+}

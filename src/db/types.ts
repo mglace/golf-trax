@@ -131,3 +131,30 @@ export interface SyncState {
   /** The account currently syncing, or null when signed out / local-only. */
   userId: string | null
 }
+
+/**
+ * A published share link for a completed round, keyed by `roundId` so
+ * re-sharing the same round reuses its existing link instead of minting a
+ * second one and orphaning the first.
+ *
+ * Deliberately its OWN table rather than fields on `Round`: adding a column to
+ * `Round` would drag the sync reconciliation rules and both `sync.test.ts`
+ * files into what is a purely local, cosmetic concern. Shares never sync.
+ */
+export interface ShareRecord {
+  /** The round this link was created for. */
+  id: string
+  /** Opaque public id — the `/r/{shareId}` path segment. */
+  shareId: string
+  /** Public landing-page URL, safe to hand to the OS share sheet. */
+  url: string
+  /** Rendered card image, used for the in-app preview. */
+  imageUrl: string
+  /**
+   * Capability token for revoking the share. Returned by the server exactly
+   * once at creation and stored only as a hash there, so if this is lost the
+   * link can never be taken down.
+   */
+  revokeToken: string
+  createdAt: string
+}

@@ -10,6 +10,7 @@
   "dependencies": {
     "@azure/cosmos": "^4.2.0",
     "@azure/functions": "^4.5.0",
+    "@resvg/resvg-js": "^2.6.2",
     "jose": "^5.9.6"
   }
 }
