@@ -13,15 +13,17 @@ match the existing account in `docs/PHASE2-SETUP.md` (`golftrax-cosmos` in
 
 ### 1. Create the `shares` container
 
-Run from the repo root so the relative `shares-index.json` path resolves.
+The container is all you need — **the custom indexing policy is an optimization,
+not a requirement**, so create it first and apply the policy afterwards. That
+also keeps this step free of az's `@file` handling, which is the part most likely
+to fight you.
 
 ```bash
 az cosmosdb sql container create \
   --account-name golftrax-cosmos --resource-group golftrax-rg \
   --database-name golftrax --name shares \
   --partition-key-path /id \
-  --ttl=-1 \
-  --idx @shares-index.json
+  --ttl=-1
 ```
 
 ```powershell
@@ -29,11 +31,40 @@ az cosmosdb sql container create `
   --account-name golftrax-cosmos --resource-group golftrax-rg `
   --database-name golftrax --name shares `
   --partition-key-path /id `
-  --ttl=-1 `
-  --idx "@shares-index.json"
+  --ttl=-1
 ```
 
 The account is serverless, so there is no `--throughput` flag.
+
+#### Applying the indexing policy (optional)
+
+`shares-index.json` lives at the repo root, so `@shares-index.json` only
+resolves if you are in a checkout that actually has it — it arrived with the
+share feature, so a `main` checkout will not. az does not report a missing file:
+it passes the literal `@shares-index.json` through and fails with
+`Failed to parse string as JSON`, which reads like a quoting problem and isn't.
+
+Easiest route, and the one that avoids shell quoting entirely: **Portal →
+`shares` container → Settings → Indexing Policy**, paste the contents of
+`shares-index.json`, Save.
+
+Or from a checkout that has the file:
+
+```bash
+az cosmosdb sql container update \
+  --account-name golftrax-cosmos --resource-group golftrax-rg \
+  --database-name golftrax --name shares \
+  --idx @shares-index.json
+```
+
+```powershell
+az cosmosdb sql container update `
+  --account-name golftrax-cosmos --resource-group golftrax-rg `
+  --database-name golftrax --name shares `
+  --idx "@$PWD\shares-index.json"
+```
+
+An absolute path sidesteps any ambiguity about the working directory.
 
 **`--ttl=-1` is not optional.** It turns the TTL feature *on* without expiring
 anything by default. Share documents set no `ttl` and so live forever; the
@@ -53,7 +84,9 @@ shell.
 `shares-index.json` excludes `/snapshot/*` — the pars/scores arrays and stat
 objects are never queried (the only read path is a point read by `id`), so
 indexing them just costs RU on every write. The rest stays indexed so `origin`
-and `createdAt` remain queryable for cleanup.
+and `createdAt` remain queryable for cleanup. Skipping it is fine: the default
+policy indexes everything, which is correct, just marginally more expensive per
+write.
 
 ### 2. Add the app settings
 
