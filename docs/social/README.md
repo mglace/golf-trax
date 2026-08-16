@@ -211,12 +211,33 @@ the entire point of the feature.
 SWA staging environments inherit production app settings, so a share created
 while testing a PR lands in the **production** container, with a link pointing at
 a host that dies when the PR closes. Each document records the `origin` it was
-created from, so those are identifiable:
+created from, so those stay identifiable rather than indistinguishable from real
+user shares.
 
-```sql
-SELECT c.id, c.origin, c.createdAt FROM c
-WHERE c.type = 'share' AND NOT CONTAINS(c.origin, 'golftrax.app')
+To clean them up, from the repo root:
+
+```bat
+set COSMOS_ENDPOINT=https://golftrax-cosmos.documents.azure.com:443/
+set COSMOS_KEY=<primary-key>
+node api/scripts/purge-preview-shares.js
 ```
+
+```powershell
+$env:COSMOS_ENDPOINT = 'https://golftrax-cosmos.documents.azure.com:443/'
+$env:COSMOS_KEY = '<primary-key>'
+node api/scripts/purge-preview-shares.js
+```
+
+**Dry run by default** — it lists what it would remove and stops. Add `--delete`
+to actually remove them.
+
+What it will never touch, by design (`api/src/share-purge.js`, tested):
+production-origin shares; shares with **no** recorded origin, which predate
+origin stamping — absence of evidence must not mean deletion; and the rate-limit
+counters, which expire on their own TTL.
+
+Set `PRODUCTION_ORIGINS` (comma-separated) if the app is ever served from more
+than one hostname — anything outside that list counts as a preview.
 
 ---
 
