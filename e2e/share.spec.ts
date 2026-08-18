@@ -77,7 +77,12 @@ test.describe('Share a finished round', () => {
     await page.goto(`/round/${ROUND_ID}/summary`)
 
     await page.getByRole('button', { name: 'Share', exact: true }).click()
-    await expect(page.getByRole('dialog', { name: 'Share this round' })).toBeVisible()
+    const dialog = page.getByRole('dialog', { name: 'Share this round' })
+    await expect(dialog).toBeVisible()
+    // The dialog opens while the POST is still in flight — the preview is what
+    // proves it resolved, so waiting on the dialog alone leaves `calls[0]`
+    // undefined about one run in six.
+    await expect(dialog.getByAltText('Your round card')).toBeVisible()
 
     const body = JSON.stringify(calls[0])
     expect(body).not.toContain(ROUND_ID)
@@ -141,9 +146,10 @@ async function expectCardDecoded(page: Page) {
  *
  * In production the backend renders `/r/{shareId}`; the dev server the e2e suite
  * runs against has no functions, so what these exercise is the SPA's own
- * handling of the path — the fallback that has to work when a stale service
- * worker answers the navigation from its precache. Before it existed, that tap
- * hit the router's "Unexpected Application Error! 404 Not Found" screen.
+ * handling of the path — the backstop for the shell being served there anyway,
+ * which `NAVIGATION_FALLBACK_DENYLIST` is what prevents. (It does NOT rescue a
+ * client still on a pre-denylist service worker: that worker serves its own
+ * precached shell, which has no `/r/` route. See SharedRoundPage.)
  */
 test.describe('Opening a share link in the app', () => {
   test('shows the shared card and a way into the app', async ({ page }) => {
@@ -153,6 +159,11 @@ test.describe('Opening a share link in the app', () => {
     await expectCardDecoded(page)
     await expect(page.getByRole('link', { name: 'Open GolfTrax' })).toBeVisible()
     await expect(page.getByText('Unexpected Application Error')).toHaveCount(0)
+
+    // The live region must already be in the accessible tree while the card is
+    // showing: a region inserted in the same mutation as its text is commonly
+    // missed by screen readers. Attached, not visible — it's empty here.
+    await expect(page.getByRole('status')).toBeAttached()
   })
 
   test('a card that will not load hedges instead of asserting a revocation', async ({ page }) => {

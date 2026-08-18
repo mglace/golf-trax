@@ -49,7 +49,7 @@ export function SharedRoundPage() {
   // or screen-reader user that reads as the retry doing nothing. Put focus back
   // on the button they pressed, but only when they actually pressed it: seizing
   // focus on the FIRST failure would yank it out of wherever the reader was.
-  // (The live region on the notice announces the message either way.)
+  // (The persistent live region announces the message either way.)
   useEffect(() => {
     if (failure && retried.current) retryButton.current?.focus()
   }, [failure])
@@ -76,40 +76,58 @@ export function SharedRoundPage() {
 
   const src = `/api/share/${encodeURIComponent(shareId)}/image.png`
 
+  const problem: 'invalid' | Failure | null = !SHARE_ID.test(shareId) ? 'invalid' : failure
+
   return (
     <div className="flex min-h-screen flex-col items-center gap-7 bg-gradient-to-b from-fairway-900 via-[#071b12] to-[#050f0b] px-5 pb-14 pt-8">
-      {!SHARE_ID.test(shareId) ? (
-        <Notice>
-          <p className="text-base text-[#a9c6b6]">That share link isn’t valid.</p>
-        </Notice>
-      ) : failure === 'offline' ? (
-        <Notice>
-          <p className="flex items-center justify-center gap-2 font-semibold text-white">
-            <WifiOffIcon className="h-5 w-5" aria-hidden />
-            You’re offline
-          </p>
-          <p className="mt-1.5 text-base text-[#a9c6b6]">
-            This round card needs a connection to load.
-          </p>
-          <RetryButton onClick={retry} buttonRef={retryButton} />
-        </Notice>
-      ) : failure === 'unavailable' ? (
-        <Notice>
-          <p className="text-base text-[#a9c6b6]">
-            Couldn’t load this round. It may no longer be shared.
-          </p>
-          <RetryButton onClick={retry} buttonRef={retryButton} />
-        </Notice>
-      ) : (
-        <img
-          src={src}
-          alt="A shared GolfTrax round card"
-          width={1080}
-          height={1350}
-          onError={onImageError}
-          className="block h-auto w-full max-w-[480px] rounded-[20px] shadow-2xl"
-        />
-      )}
+      {/* The card slot: the image, or — announced — why it isn't there. */}
+      <div className="w-full max-w-[480px]">
+        {problem === null && (
+          <img
+            src={src}
+            alt="A shared GolfTrax round card"
+            width={1080}
+            height={1350}
+            onError={onImageError}
+            className="block h-auto w-full rounded-[20px] shadow-2xl"
+          />
+        )}
+
+        {/* Always mounted, following ShareSheet.tsx and SettingsPage.tsx: a live
+            region has to be in the accessible tree BEFORE its content changes,
+            or screen readers commonly miss an announcement inserted in the same
+            mutation as the region itself. Empty it collapses to nothing, so it
+            costs no layout while the card is showing. */}
+        <div role="status">
+          {problem !== null && (
+            <Notice>
+              {problem === 'invalid' && (
+                <p className="text-base text-[#a9c6b6]">That share link isn’t valid.</p>
+              )}
+              {problem === 'offline' && (
+                <>
+                  <p className="flex items-center justify-center gap-2 font-semibold text-white">
+                    <WifiOffIcon className="h-5 w-5" aria-hidden />
+                    You’re offline
+                  </p>
+                  <p className="mt-1.5 text-base text-[#a9c6b6]">
+                    This round card needs a connection to load.
+                  </p>
+                  <RetryButton onClick={retry} buttonRef={retryButton} />
+                </>
+              )}
+              {problem === 'unavailable' && (
+                <>
+                  <p className="text-base text-[#a9c6b6]">
+                    Couldn’t load this round. It may no longer be shared.
+                  </p>
+                  <RetryButton onClick={retry} buttonRef={retryButton} />
+                </>
+              )}
+            </Notice>
+          )}
+        </div>
+      </div>
 
       <div className="w-full max-w-[480px] text-center">
         <h1 className="text-2xl font-bold tracking-tight text-white">Track your rounds. Free.</h1>
@@ -131,18 +149,13 @@ export function SharedRoundPage() {
 }
 
 /**
- * Stands in for the card, so the CTA below it doesn't jump around.
- *
- * `role="status"` makes it a live region: the notice only ever appears in place
- * of the card, so every message it carries is news the reader needs, and a
- * retry that fails again announces itself instead of changing nothing audible.
+ * The visible box only. The live region is the persistent wrapper in the render
+ * above — styling lives here so that region can stay empty and invisible while
+ * the card is showing, rather than drawing an empty bordered box.
  */
 function Notice({ children }: { children: ReactNode }) {
   return (
-    <div
-      role="status"
-      className="mt-6 w-full max-w-[480px] rounded-2xl border border-white/10 bg-white/5 p-6 text-center"
-    >
+    <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-6 text-center">
       {children}
     </div>
   )
