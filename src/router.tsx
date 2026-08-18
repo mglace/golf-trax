@@ -53,6 +53,13 @@ const SettingsPage = lazy(() =>
 const StatsPage = lazy(() =>
   import('@/features/stats/StatsPage').then((m) => ({ default: m.StatsPage })),
 )
+// The share landing page is server-rendered; this is the backstop for the shell
+// being served in its place. Splitting it costs nothing it needs: whoever renders
+// it either has a controlling service worker (which precaches every built chunk)
+// or reached the shell over a working network, so the chunk resolves either way.
+const SharedRoundPage = lazy(() =>
+  import('@/features/share/SharedRoundPage').then((m) => ({ default: m.SharedRoundPage })),
+)
 
 /**
  * Wrap a lazily-loaded route element in a per-route-keyed error boundary +
@@ -115,4 +122,7 @@ export const router = createBrowserRouter([
   },
   { path: '/round/:roundId', element: <RoundEntryPage /> },
   { path: '/round/:roundId/summary', element: <RoundSummaryPage /> },
+  // Normally served by the backend, not here — see SharedRoundPage for what this
+  // route does and does not rescue.
+  { path: '/r/:shareId', element: lazyRoute('shared-round', <SharedRoundPage />) },
 ])

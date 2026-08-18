@@ -77,7 +77,12 @@ test.describe('Share a finished round', () => {
     await page.goto(`/round/${ROUND_ID}/summary`)
 
     await page.getByRole('button', { name: 'Share', exact: true }).click()
-    await expect(page.getByRole('dialog', { name: 'Share this round' })).toBeVisible()
+    const dialog = page.getByRole('dialog', { name: 'Share this round' })
+    await expect(dialog).toBeVisible()
+    // The dialog opens while the POST is still in flight — the preview is what
+    // proves it resolved, so waiting on the dialog alone leaves `calls[0]`
+    // undefined about one run in six.
+    await expect(dialog.getByAltText('Your round card')).toBeVisible()
 
     const body = JSON.stringify(calls[0])
     expect(body).not.toContain(ROUND_ID)
@@ -117,5 +122,112 @@ test.describe('Share a finished round', () => {
     await expect(dialog.getByText(/You’re offline/)).toBeVisible()
     // The round is safe — the copy must reassure, not alarm.
     await expect(dialog.getByText(/Your round is saved/)).toBeVisible()
+  })
+})
+
+/** Matches the card image regardless of query string. */
+const IMAGE_ROUTE = /\/api\/share\/[^/]+\/image\.png/
+
+/**
+ * A broken <img> still satisfies `toBeVisible()` — width/height give it a box
+ * either way — so a stub that quietly missed would look like a pass. Decoded
+ * pixels are the only assertion that means the card actually rendered.
+ */
+async function expectCardDecoded(page: Page) {
+  const card = page.getByAltText('A shared GolfTrax round card')
+  await expect(card).toBeVisible()
+  await expect
+    .poll(() => card.evaluate((img: HTMLImageElement) => img.naturalWidth))
+    .toBeGreaterThan(0)
+}
+
+/**
+ * Opening a share link.
+ *
+ * In production the backend renders `/r/{shareId}`; the dev server the e2e suite
+ * runs against has no functions, so what these exercise is the SPA's own
+ * handling of the path — the backstop for the shell being served there anyway,
+ * which `NAVIGATION_FALLBACK_DENYLIST` is what prevents. (It does NOT rescue a
+ * client still on a pre-denylist service worker: that worker serves its own
+ * precached shell, which has no `/r/` route. See SharedRoundPage.)
+ */
+test.describe('Opening a share link in the app', () => {
+  test('shows the shared card and a way into the app', async ({ page }) => {
+    await stubShare(page)
+    await page.goto('/r/MDUBlwoS_Cb9UOT6E05kkw')
+
+    await expectCardDecoded(page)
+    await expect(page.getByRole('link', { name: 'Open GolfTrax' })).toBeVisible()
+    await expect(page.getByText('Unexpected Application Error')).toHaveCount(0)
+
+    // The live region must already be in the accessible tree while the card is
+    // showing: a region inserted in the same mutation as its text is commonly
+    // missed by screen readers. Attached, not visible — it's empty here.
+    await expect(page.getByRole('status')).toBeAttached()
+  })
+
+  test('a card that will not load hedges instead of asserting a revocation', async ({ page }) => {
+    // 404 (revoked) and 500 (render/store failure) are indistinguishable from an
+    // <img> error event, so the copy must not claim which one happened.
+    await page.route('**/api/share/**/image.png', (route) => route.fulfill({ status: 404 }))
+    await page.goto('/r/MDUBlwoS_Cb9UOT6E05kkw')
+
+    await expect(page.getByText(/Couldn’t load this round/)).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Open GolfTrax' })).toBeVisible()
+  })
+
+  test('"Try again" re-requests the card and recovers', async ({ page }) => {
+    // `attempts` is the point: the button has to produce a SECOND request, not
+    // just repaint the failed one.
+    let attempts = 0
+    await page.route(IMAGE_ROUTE, (route) => {
+      attempts += 1
+      if (attempts === 1) return route.fulfill({ status: 500 })
+      return route.fulfill({ status: 200, contentType: 'image/png', body: PNG_1PX })
+    })
+    await page.goto('/r/MDUBlwoS_Cb9UOT6E05kkw')
+
+    await expect(page.getByText(/Couldn’t load this round/)).toBeVisible()
+    await page.getByRole('button', { name: 'Try again' }).click()
+
+    await expectCardDecoded(page)
+    expect(attempts).toBe(2)
+  })
+
+  test('a retry that fails again keeps focus and announces itself', async ({ page }) => {
+    // Without this, "Try again" tears down the button the user just pressed and
+    // focus lands on <body> — the retry reads as doing nothing to a keyboard or
+    // screen-reader user.
+    await page.route(IMAGE_ROUTE, (route) => route.fulfill({ status: 404 }))
+    await page.goto('/r/MDUBlwoS_Cb9UOT6E05kkw')
+
+    const button = page.getByRole('button', { name: 'Try again' })
+    await expect(button).toBeVisible()
+    // The message must live in a region a screen reader will announce.
+    await expect(page.getByRole('status')).toContainText(/Couldn’t load this round/)
+
+    await button.focus()
+    await button.press('Enter')
+
+    await expect(page.getByRole('button', { name: 'Try again' })).toBeFocused()
+  })
+
+  test('a dropped connection says so rather than blaming the sender', async ({
+    page,
+    context,
+  }) => {
+    // Signal has to drop AFTER the document loads: offline from the start would
+    // fail the navigation itself, which in production the service worker
+    // absorbs but the e2e dev server (no SW) cannot.
+    await page.route(IMAGE_ROUTE, (route) => route.abort())
+    await page.goto('/r/MDUBlwoS_Cb9UOT6E05kkw')
+    await expect(page.getByText(/Couldn’t load this round/)).toBeVisible()
+
+    await context.setOffline(true)
+    await page.getByRole('button', { name: 'Try again' }).click()
+
+    await expect(page.getByText(/You’re offline/)).toBeVisible()
+    // The round is still there — the copy must not send the reader away.
+    await expect(page.getByText(/no longer be shared/)).toHaveCount(0)
   })
 })

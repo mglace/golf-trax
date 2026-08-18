@@ -224,11 +224,32 @@ for pinned home-screen installs. Runtime caching (`NetworkFirst`) is scoped
 GET could serve one account's data to another on a shared device. Keep that scope
 narrow if you edit the workbox config. The SW is disabled in dev.
 
+**The navigation fallback is a second routing layer, and it outranks Azure.**
+`navigateFallback` defaults to `index.html`, which makes the SW answer *every*
+same-origin navigation from its precache — before the request can reach SWA, so
+excluding a path in `staticwebapp.config.json` alone does nothing once the SW is
+controlling the page. Any server-rendered path must therefore be listed in
+**both** places: `navigationFallback.exclude` there and
+`NAVIGATION_FALLBACK_DENYLIST` in `src/pwa/navigationDenylist.ts` (wired into the
+workbox config; `src/pwa/navigationDenylist.test.ts` guards the pairing). That
+bit `/r/{shareId}`: the SWA config was right, the SW had no denylist, so anyone
+who had already opened the app got the shell and a router 404 for a share link —
+while crawlers, which run no service worker, saw the real card and made the
+feature look healthy. Note what a denylist fix can and cannot reach: a client
+still running the OLD worker gets that build's precached shell and entry chunk,
+so it keeps 404ing until `autoUpdate` activates the new worker and reloads — no
+SPA-side route can rescue it, because the route isn't in the shell being served.
+`/r/:shareId` does have an SPA route (`SharedRoundPage`), but as insurance
+against the denylist regressing, not as a migration path.
+
 ### Routing
 
 `src/router.tsx`: bottom-nav tabs (Home / Rounds / Stats) and the course-search
 flow render inside `AppLayout`; the focused round-entry and round-summary flows
 are top-level full-screen routes (no bottom tabs) to maximize on-course space.
+`/r/:shareId` is also top-level, but it is a **fallback** — the backend normally
+renders that path (see the PWA note above), and the SPA reaches it only if the
+shell gets served there anyway, which the denylist is what prevents.
 
 **Code-splitting:** the round-start flow (course search / setup / manual) and the
 peripheral routes (rounds history, settings, stats) are `React.lazy`-loaded via

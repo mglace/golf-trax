@@ -32,10 +32,11 @@ export function toRoutePattern(pathname: string): string {
   }
 
   // /r/:shareId — the public share landing page. Server-rendered, so the SPA
-  // does not normally route it, but a share link opened in an installed PWA can
-  // land here. Named explicitly rather than left to the isIdLike fallback: a
-  // share id is base64url and can come out purely alphabetic, which that net
-  // does not catch (see isIdLike).
+  // does not normally route it; SharedRoundPage is a backstop for the shell
+  // being served there anyway (see that file — it does not rescue clients on a
+  // pre-denylist service worker). Named explicitly rather than left to the
+  // isIdLike fallback: a share id is base64url and can come out purely
+  // alphabetic, which that net does not catch (see isIdLike).
   if (segments[0] === 'r' && segments.length >= 2) return '/r/:shareId'
 
   if (segments[0] === 'new') {
