@@ -1,27 +1,27 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useParams } from 'react-router-dom'
 import { WifiOffIcon } from '@/components/icons'
 
 /**
  * In-app rendering of `/r/{shareId}`, the public share landing page.
  *
- * Normally the SERVER answers this path (`api/src/functions/share-page.js`) and
- * the SPA never sees it. This route exists for the case where the shell gets
- * served anyway — an already-installed service worker whose navigation fallback
- * predates `navigationDenylist.ts` still answers share links from its precache,
- * and it only picks up the fix after the shell has loaded once. Without a route
- * here, those taps land on the router's "Unexpected Application Error! 404 Not
- * Found" screen.
+ * The SERVER owns this path (`api/src/functions/share-page.js`); this component
+ * is a backstop for the shell being served in its place, which
+ * `NAVIGATION_FALLBACK_DENYLIST` now prevents. It does NOT rescue clients still
+ * running a pre-denylist service worker — measured, not assumed: that worker
+ * serves its OWN precached shell and entry chunk, which contain no `/r/` route,
+ * so those taps still hit the router's 404 until `autoUpdate` activates the new
+ * worker and reloads (after which the navigation reaches the server page).
+ *
+ * What it does cover is a regression: if the denylist ever loses `/r/`, a share
+ * link degrades to this card instead of an "Unexpected Application Error"
+ * screen. Cheap insurance on the app's main acquisition funnel, and the e2e
+ * suite exercises it.
  *
  * It deliberately does NOT redirect to the server page: a navigation is exactly
- * what such a service worker intercepts, so `/api/r/{shareId}` would be
- * answered with the shell too. The card image is a subresource request instead,
- * which no navigation fallback touches — so this works on old and new service
- * workers alike, and keeps the pretty URL.
- *
- * Kept eager in the entry chunk (see the routing notes in `src/router.tsx`): a
- * lazy chunk here would be one more thing to fetch on the connection that just
- * failed to reach the server page.
+ * what a shell-serving worker intercepts, so `/api/r/{shareId}` would come back
+ * as the shell too. The card image is a subresource request, which no
+ * navigation fallback touches.
  */
 
 /** The id charset the API enforces — see `handleSharePage`. */
@@ -40,6 +40,19 @@ type Failure = 'offline' | 'unavailable'
 export function SharedRoundPage() {
   const { shareId = '' } = useParams<{ shareId: string }>()
   const [failure, setFailure] = useState<Failure | null>(null)
+  const retryButton = useRef<HTMLButtonElement>(null)
+  const retried = useRef(false)
+
+  // A retry tears down the notice — and with it the button the user just
+  // pressed — so if the second attempt fails too, focus would be sitting on
+  // <body> and the replacement button is a different DOM node. For a keyboard
+  // or screen-reader user that reads as the retry doing nothing. Put focus back
+  // on the button they pressed, but only when they actually pressed it: seizing
+  // focus on the FIRST failure would yank it out of wherever the reader was.
+  // (The live region on the notice announces the message either way.)
+  useEffect(() => {
+    if (failure && retried.current) retryButton.current?.focus()
+  }, [failure])
 
   // An <img> error event carries no status code, so the only distinction
   // available is connectivity read AT THE MOMENT OF FAILURE — and it's the one
@@ -56,7 +69,10 @@ export function SharedRoundPage() {
   // the <img> with the notice below, so dropping back mounts a fresh element,
   // which issues a fresh request. No cache-busting query needed — verified
   // against a 500 in the e2e suite, which counts the second request.
-  const retry = () => setFailure(null)
+  const retry = () => {
+    retried.current = true
+    setFailure(null)
+  }
 
   const src = `/api/share/${encodeURIComponent(shareId)}/image.png`
 
@@ -75,14 +91,14 @@ export function SharedRoundPage() {
           <p className="mt-1.5 text-base text-[#a9c6b6]">
             This round card needs a connection to load.
           </p>
-          <RetryButton onClick={retry} />
+          <RetryButton onClick={retry} buttonRef={retryButton} />
         </Notice>
       ) : failure === 'unavailable' ? (
         <Notice>
           <p className="text-base text-[#a9c6b6]">
             Couldn’t load this round. It may no longer be shared.
           </p>
-          <RetryButton onClick={retry} />
+          <RetryButton onClick={retry} buttonRef={retryButton} />
         </Notice>
       ) : (
         <img
@@ -114,19 +130,35 @@ export function SharedRoundPage() {
   )
 }
 
-/** Stands in for the card, so the CTA below it doesn't jump around. */
+/**
+ * Stands in for the card, so the CTA below it doesn't jump around.
+ *
+ * `role="status"` makes it a live region: the notice only ever appears in place
+ * of the card, so every message it carries is news the reader needs, and a
+ * retry that fails again announces itself instead of changing nothing audible.
+ */
 function Notice({ children }: { children: ReactNode }) {
   return (
-    <div className="mt-6 w-full max-w-[480px] rounded-2xl border border-white/10 bg-white/5 p-6 text-center">
+    <div
+      role="status"
+      className="mt-6 w-full max-w-[480px] rounded-2xl border border-white/10 bg-white/5 p-6 text-center"
+    >
       {children}
     </div>
   )
 }
 
-function RetryButton({ onClick }: { onClick: () => void }) {
+function RetryButton({
+  onClick,
+  buttonRef,
+}: {
+  onClick: () => void
+  buttonRef: React.Ref<HTMLButtonElement>
+}) {
   return (
     <button
       type="button"
+      ref={buttonRef}
       onClick={onClick}
       className="mt-4 min-h-[44px] rounded-full border border-white/25 px-5 font-semibold text-white active:bg-white/10"
     >

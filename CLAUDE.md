@@ -235,9 +235,12 @@ workbox config; `src/pwa/navigationDenylist.test.ts` guards the pairing). That
 bit `/r/{shareId}`: the SWA config was right, the SW had no denylist, so anyone
 who had already opened the app got the shell and a router 404 for a share link —
 while crawlers, which run no service worker, saw the real card and made the
-feature look healthy. Because an installed SW only picks up such a fix *after*
-serving the shell once, `/r/:shareId` also has a real SPA route
-(`SharedRoundPage`) as the client-side safety net.
+feature look healthy. Note what a denylist fix can and cannot reach: a client
+still running the OLD worker gets that build's precached shell and entry chunk,
+so it keeps 404ing until `autoUpdate` activates the new worker and reloads — no
+SPA-side route can rescue it, because the route isn't in the shell being served.
+`/r/:shareId` does have an SPA route (`SharedRoundPage`), but as insurance
+against the denylist regressing, not as a migration path.
 
 ### Routing
 
@@ -245,8 +248,8 @@ serving the shell once, `/r/:shareId` also has a real SPA route
 flow render inside `AppLayout`; the focused round-entry and round-summary flows
 are top-level full-screen routes (no bottom tabs) to maximize on-course space.
 `/r/:shareId` is also top-level, but it is a **fallback** — the backend normally
-renders that path (see the PWA note above), and the SPA only reaches it when a
-stale service worker served the shell instead.
+renders that path (see the PWA note above), and the SPA reaches it only if the
+shell gets served there anyway, which the denylist is what prevents.
 
 **Code-splitting:** the round-start flow (course search / setup / manual) and the
 peripheral routes (rounds history, settings, stats) are `React.lazy`-loaded via

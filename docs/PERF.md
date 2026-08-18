@@ -40,7 +40,8 @@ From `npm run build` (Vite + `vite-plugin-pwa`):
   must work offline from a cold first launch, before the service worker is
   controlling the page, so it can't depend on a separate chunk fetch.
 - **Peripheral routes are code-split** (`src/router.tsx`): the course-search
-  flow, settings, rounds history, and stats each load on demand. This lifted
+  flow, settings, rounds history, stats, and the `/r/:shareId` share-link
+  backstop each load on demand. This lifted
   ~40 KB raw / ~10 KB gzip of route code that was unused on `/` out of the entry
   chunk. Each is wrapped in an error boundary so a failed chunk fetch shows a
   retry instead of blanking the app.

@@ -183,6 +183,24 @@ test.describe('Opening a share link in the app', () => {
     expect(attempts).toBe(2)
   })
 
+  test('a retry that fails again keeps focus and announces itself', async ({ page }) => {
+    // Without this, "Try again" tears down the button the user just pressed and
+    // focus lands on <body> — the retry reads as doing nothing to a keyboard or
+    // screen-reader user.
+    await page.route(IMAGE_ROUTE, (route) => route.fulfill({ status: 404 }))
+    await page.goto('/r/MDUBlwoS_Cb9UOT6E05kkw')
+
+    const button = page.getByRole('button', { name: 'Try again' })
+    await expect(button).toBeVisible()
+    // The message must live in a region a screen reader will announce.
+    await expect(page.getByRole('status')).toContainText(/Couldn’t load this round/)
+
+    await button.focus()
+    await button.press('Enter')
+
+    await expect(page.getByRole('button', { name: 'Try again' })).toBeFocused()
+  })
+
   test('a dropped connection says so rather than blaming the sender', async ({
     page,
     context,
