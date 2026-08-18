@@ -4,6 +4,7 @@ import { AppLayout } from '@/components/AppLayout'
 import { HomePage } from '@/features/home/HomePage'
 import { RoundEntryPage } from '@/features/round-entry/RoundEntryPage'
 import { RoundSummaryPage } from '@/features/round-summary/RoundSummaryPage'
+import { SharedRoundPage } from '@/features/share/SharedRoundPage'
 import { LazyFallback } from '@/components/LazyFallback'
 import { LazyRouteError } from '@/components/LazyRouteError'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
@@ -14,11 +15,13 @@ import { isChunkLoadError } from '@/components/isChunkLoadError'
 // all built JS (vite.config.ts `globPatterns`), so once it's controlling the
 // page these chunks resolve instantly, offline included.
 //
-// EAGER (entry chunk): the app shell, HomePage, and the on-course
-// RoundEntryPage/RoundSummaryPage. CLAUDE.md requires the on-course flow to work
-// offline from a cold first launch, and on the very first visit the SW isn't
-// controlling yet — a lazy chunk there could fail on spotty on-course signal,
-// exactly where it matters most.
+// EAGER (entry chunk): the app shell, HomePage, the on-course
+// RoundEntryPage/RoundSummaryPage, and SharedRoundPage. CLAUDE.md requires the
+// on-course flow to work offline from a cold first launch, and on the very first
+// visit the SW isn't controlling yet — a lazy chunk there could fail on spotty
+// on-course signal, exactly where it matters most. SharedRoundPage is eager for
+// a related reason: it only renders when a stale service worker served the shell
+// instead of the server's landing page, so it must not need another fetch.
 //
 // LAZY: the round-start flow (course search / setup / manual), rounds history,
 // settings, and stats. The round-start flow *does* support offline (search
@@ -115,4 +118,7 @@ export const router = createBrowserRouter([
   },
   { path: '/round/:roundId', element: <RoundEntryPage /> },
   { path: '/round/:roundId/summary', element: <RoundSummaryPage /> },
+  // Normally served by the backend, not here — see SharedRoundPage for why the
+  // SPA needs a route for it anyway.
+  { path: '/r/:shareId', element: <SharedRoundPage /> },
 ])

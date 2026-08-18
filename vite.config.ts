@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'node:path'
 import { readFileSync } from 'node:fs'
+import { NAVIGATION_FALLBACK_DENYLIST } from './src/pwa/navigationDenylist'
 
 const { version } = JSON.parse(
   readFileSync(path.resolve(__dirname, './package.json'), 'utf-8'),
@@ -66,6 +67,11 @@ export default defineConfig({
         // runtime so previously-viewed courses work offline; new searches still
         // require connectivity (expected — see requirements).
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+        // `navigateFallback` defaults to index.html, which makes the SW answer
+        // EVERY same-origin navigation with the shell — including the paths the
+        // server owns. Keep this list in step with `navigationFallback.exclude`
+        // in public/staticwebapp.config.json; see navigationDenylist.ts.
+        navigateFallbackDenylist: NAVIGATION_FALLBACK_DENYLIST,
         runtimeCaching: [
           {
             // Cache ONLY the public course-lookup routes. Match both transports:

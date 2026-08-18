@@ -119,3 +119,31 @@ test.describe('Share a finished round', () => {
     await expect(dialog.getByText(/Your round is saved/)).toBeVisible()
   })
 })
+
+/**
+ * Opening a share link.
+ *
+ * In production the backend renders `/r/{shareId}`; the dev server the e2e suite
+ * runs against has no functions, so what these exercise is the SPA's own
+ * handling of the path — the fallback that has to work when a stale service
+ * worker answers the navigation from its precache. Before it existed, that tap
+ * hit the router's "Unexpected Application Error! 404 Not Found" screen.
+ */
+test.describe('Opening a share link in the app', () => {
+  test('shows the shared card and a way into the app', async ({ page }) => {
+    await stubShare(page)
+    await page.goto('/r/MDUBlwoS_Cb9UOT6E05kkw')
+
+    await expect(page.getByAltText('A shared GolfTrax round card')).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Open GolfTrax' })).toBeVisible()
+    await expect(page.getByText('Unexpected Application Error')).toHaveCount(0)
+  })
+
+  test('a revoked share says so instead of showing a broken image', async ({ page }) => {
+    await page.route('**/api/share/**/image.png', (route) => route.fulfill({ status: 404 }))
+    await page.goto('/r/MDUBlwoS_Cb9UOT6E05kkw')
+
+    await expect(page.getByText('This round is no longer shared.')).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Open GolfTrax' })).toBeVisible()
+  })
+})
