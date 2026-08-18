@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useParams } from 'react-router-dom'
+import { WifiOffIcon } from '@/components/icons'
 
 /**
  * In-app rendering of `/r/{shareId}`, the public share landing page.
@@ -29,28 +30,67 @@ const SHARE_ID = /^[A-Za-z0-9_-]+$/
 /** Matches the server page's CTA so share landings stay separable in GA. */
 const APP_URL = '/?utm_source=share&utm_medium=social&utm_campaign=round_card'
 
+/**
+ * `offline` is recoverable and worth saying out loud; `unavailable` covers
+ * everything else the image endpoint can do — a revoked share (404), a store or
+ * render failure (500) — which this page cannot tell apart.
+ */
+type Failure = 'offline' | 'unavailable'
+
 export function SharedRoundPage() {
   const { shareId = '' } = useParams<{ shareId: string }>()
-  const [imageFailed, setImageFailed] = useState(false)
+  const [failure, setFailure] = useState<Failure | null>(null)
 
-  // An unreadable id and an image that won't load are the same thing to the
-  // reader: there is no card to show. The server says as much for a revoked
-  // share, so say it here rather than leaving a broken image frame.
-  const unavailable = !SHARE_ID.test(shareId) || imageFailed
+  // An <img> error event carries no status code, so the only distinction
+  // available is connectivity read AT THE MOMENT OF FAILURE — and it's the one
+  // that matters, because it's the difference between "wait and retry" and
+  // "there is nothing to see". Everything else stays deliberately vague rather
+  // than claiming a revocation the page can't confirm: saying "no longer
+  // shared" to someone whose signal dropped sends them away from a round that
+  // is still there. (`useOnlineStatus` is the hook for a live banner; this is a
+  // point-in-time classification of one failed request, which is why it reads
+  // `navigator.onLine` directly.)
+  const onImageError = () => setFailure(navigator.onLine ? 'unavailable' : 'offline')
+
+  // Clearing the failure is a real retry, not just a repaint: a failure replaces
+  // the <img> with the notice below, so dropping back mounts a fresh element,
+  // which issues a fresh request. No cache-busting query needed — verified
+  // against a 500 in the e2e suite, which counts the second request.
+  const retry = () => setFailure(null)
+
+  const src = `/api/share/${encodeURIComponent(shareId)}/image.png`
 
   return (
     <div className="flex min-h-screen flex-col items-center gap-7 bg-gradient-to-b from-fairway-900 via-[#071b12] to-[#050f0b] px-5 pb-14 pt-8">
-      {unavailable ? (
-        <p className="mt-6 max-w-md text-center text-base text-[#a9c6b6]">
-          This round is no longer shared.
-        </p>
+      {!SHARE_ID.test(shareId) ? (
+        <Notice>
+          <p className="text-base text-[#a9c6b6]">That share link isn’t valid.</p>
+        </Notice>
+      ) : failure === 'offline' ? (
+        <Notice>
+          <p className="flex items-center justify-center gap-2 font-semibold text-white">
+            <WifiOffIcon className="h-5 w-5" aria-hidden />
+            You’re offline
+          </p>
+          <p className="mt-1.5 text-base text-[#a9c6b6]">
+            This round card needs a connection to load.
+          </p>
+          <RetryButton onClick={retry} />
+        </Notice>
+      ) : failure === 'unavailable' ? (
+        <Notice>
+          <p className="text-base text-[#a9c6b6]">
+            Couldn’t load this round. It may no longer be shared.
+          </p>
+          <RetryButton onClick={retry} />
+        </Notice>
       ) : (
         <img
-          src={`/api/share/${encodeURIComponent(shareId)}/image.png`}
+          src={src}
           alt="A shared GolfTrax round card"
           width={1080}
           height={1350}
-          onError={() => setImageFailed(true)}
+          onError={onImageError}
           className="block h-auto w-full max-w-[480px] rounded-[20px] shadow-2xl"
         />
       )}
@@ -71,5 +111,26 @@ export function SharedRoundPage() {
 
       <footer className="text-[13px] text-[#6d8b7b]">Shared from GolfTrax</footer>
     </div>
+  )
+}
+
+/** Stands in for the card, so the CTA below it doesn't jump around. */
+function Notice({ children }: { children: ReactNode }) {
+  return (
+    <div className="mt-6 w-full max-w-[480px] rounded-2xl border border-white/10 bg-white/5 p-6 text-center">
+      {children}
+    </div>
+  )
+}
+
+function RetryButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="mt-4 min-h-[44px] rounded-full border border-white/25 px-5 font-semibold text-white active:bg-white/10"
+    >
+      Try again
+    </button>
   )
 }
