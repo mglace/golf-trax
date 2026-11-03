@@ -1,6 +1,6 @@
 // fake-indexeddb must be installed before the Dexie singleton is imported.
 import 'fake-indexeddb/auto'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '@/db/db'
 import type { Round } from '@/db/types'
 import { decidePush, isCursorStale, versionOf } from '@/domain/sync'
@@ -139,12 +139,23 @@ function round(overrides: Partial<Round> = {}): Round {
 }
 
 beforeEach(async () => {
+  // Pin the client's clock to the fake server's NOW_MS. sync() reaps tombstones
+  // against the real Date.now(), so without this every hard-coded fixture date
+  // silently ages out: the "2026-07-10" delete below crossed the 90-day TTL on
+  // 2026-10-08 and started being reaped mid-test. Only Date is faked —
+  // fake-indexeddb schedules work on real timers.
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(NOW_MS)
   await db.rounds.clear()
   await db.syncState.clear()
   server = new FakeServer()
   installFetch(server)
   // Reset the in-memory status store so status assertions read absolute values.
   useSyncStore.setState({ status: 'signed-out', lastSyncedAt: null })
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 describe('push', () => {
