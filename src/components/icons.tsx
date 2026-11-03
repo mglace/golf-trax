@@ -74,6 +74,17 @@ export function XIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+/** Horizontal ellipsis, matching Safari's "•••" menu button. */
+export function MoreIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base} {...props}>
+      <circle cx="5" cy="12" r="1.5" fill="currentColor" />
+      <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+      <circle cx="19" cy="12" r="1.5" fill="currentColor" />
+    </svg>
+  )
+}
+
 export function ChevronRightIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg {...base} {...props}>
