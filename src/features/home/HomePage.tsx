@@ -4,6 +4,7 @@ import { PlusIcon } from '@/components/icons'
 import { hasAnyRound } from '@/db/roundsRepo'
 import { ResumeDraftCard } from './ResumeDraftCard'
 import { HowItWorks } from './HowItWorks'
+import { InstallPrompt } from './InstallPrompt'
 
 /**
  * Home / landing screen. The "New Round" CTA starts the course-search flow, and
@@ -48,6 +49,8 @@ export function HomePage() {
       </Link>
 
       <ResumeDraftCard />
+
+      <InstallPrompt />
 
       {libraryEmpty && <HowItWorks />}
     </div>
