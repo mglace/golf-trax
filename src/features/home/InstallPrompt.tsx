@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { ShareIcon, XIcon } from '@/components/icons'
+import type { ReactNode } from 'react'
+import { MoreIcon, ShareIcon, XIcon } from '@/components/icons'
 import {
   browserInstallEnv,
   readInstallPromptDismissed,
@@ -43,14 +44,21 @@ export function InstallPrompt() {
         It opens full screen, works offline on the course, and keeps your rounds saved on this
         phone.
       </p>
-      <p className="mt-2 flex flex-wrap items-center gap-1 text-sm text-slate-700">
-        Tap
-        <span className="inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-0.5 font-medium ring-1 ring-slate-200">
-          <ShareIcon className="h-4 w-4 text-sky-600" aria-hidden />
-          Share
-        </span>
-        then <span className="font-medium">Add to Home Screen</span>.
-      </p>
+      {/*
+        Newer Safari's compact bottom bar has no Share button — it lives in the
+        "•••" menu — while older iOS and the full toolbar show it directly. Lead
+        with the ••• path and note the shortcut, so both layouts are covered.
+      */}
+      <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-sm text-slate-700">
+        <li>
+          Tap <Chip icon={<MoreIcon className="h-4 w-4 text-slate-600" aria-hidden />} srLabel="More" />{' '}
+          then <Chip icon={<ShareIcon className="h-4 w-4 text-sky-600" aria-hidden />} label="Share" />
+          <span className="text-slate-500"> (or Share right in the toolbar, if you see it)</span>
+        </li>
+        <li>
+          Scroll down and tap <span className="font-medium">Add to Home Screen.</span>
+        </li>
+      </ol>
       <button
         type="button"
         onClick={dismiss}
@@ -60,5 +68,16 @@ export function InstallPrompt() {
         <XIcon className="h-5 w-5" aria-hidden />
       </button>
     </section>
+  )
+}
+
+/** Inline stand-in for a Safari button, so the steps match what's on screen. */
+function Chip({ icon, label, srLabel }: { icon: ReactNode; label?: string; srLabel?: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-0.5 align-middle font-medium ring-1 ring-slate-200">
+      {icon}
+      {label}
+      {srLabel && <span className="sr-only">{srLabel}</span>}
+    </span>
   )
 }
